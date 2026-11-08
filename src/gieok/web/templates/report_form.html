@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ report.name or "New report" }}{% endblock %}
+{% block main %}
+<h1>{{ report.name or "New report" }}</h1>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if not is_owner %}<p>Only Monty can change reports.</p>{% else %}
+<form method="post" action="{{ '/reports/%d' % report.id if report.id else '/reports' }}">
+  <input type="hidden" name="csrf" value="{{ user.csrf }}">
+  <label>Name <input name="name" value="{{ report.name }}" required></label>
+  {% for key, name in [("agents", "agent"), ("projects", "project"), ("kinds", "kind")] %}
+  <fieldset><legend>{{ name | title }} (none = all)</legend>
+    {% for v in choices[key] %}<label><input type="checkbox" name="{{ name }}" value="{{ v }}"{% if v in report.filters.get(key, []) %} checked{% endif %}> {{ v }}</label>{% endfor %}
+  </fieldset>
+  {% endfor %}
+  <label>Days (0 = all time) <input type="number" name="days" min="0" max="3650" value="{{ report.filters.get('days', 7) }}"></label>
+  <fieldset><legend>Metrics</legend>
+    {% for m, label in metrics.items() %}<label><input type="checkbox" name="metric" value="{{ m }}"{% if m in report.metrics %} checked{% endif %}> {{ label }}</label>{% endfor %}
+  </fieldset>
+  <label>Post to Discord <select name="schedule">{% for s in schedules %}<option value="{{ s }}"{% if s == report.schedule %} selected{% endif %}>{{ s or "never" }}</option>{% endfor %}</select></label>
+  <button>Save</button>
+</form>
+{% endif %}
+{% endblock %}

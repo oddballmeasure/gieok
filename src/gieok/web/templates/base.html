@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Staff HQ{% endblock %} · Staff HQ</title>
+<link rel="stylesheet" href="/static/site.css">
+<script src="/static/htmx.min.js" defer></script>
+</head>
+<body hx-headers='{"X-CSRF-Token": "{{ user.csrf }}"}'>
+<header>
+  <a href="/">Staff HQ</a>
+  <nav>
+    {% for key, label, href in [("overview", "Overview", "/"), ("work", "Work", "/work"), ("reports", "Reports", "/reports"),
+                                ("memory", "Memory", "/memory"), ("transcripts", "Transcripts", "/transcripts"),
+                                ("system", "System", "/system")] %}
+      {% if key != "transcripts" or is_owner %}
+      <a href="{{ href }}"{% if nav == key %} aria-current="page"{% endif %}>{{ label }}</a>
+      {% endif %}
+    {% endfor %}
+  </nav>
+  <span>{{ user.name }} · {{ user.role }} · <a href="/auth/logout">log out</a></span>
+</header>
+<main>
+{% block main %}{% endblock %}
+</main>
+<footer>node {{ site.node }} · work refreshed {{ site.refreshed | ago }}</footer>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ report.name }}{% endblock %}
+{% block main %}
+<h1>{{ report.name }}</h1>
+<p>{{ "last %d days" % report.filters.days if report.filters.days else "all time" }} · {{ report.schedule or "not scheduled" }}
+  · {{ result.count }} items</p>
+<dl>{% for m in report.metrics %}<dt>{{ metrics[m] }}</dt><dd>{{ result.totals[m] | fmt_metric(m) }}</dd>{% endfor %}</dl>
+<table>
+<thead><tr><th>Agent</th>{% for m in report.metrics %}<th>{{ metrics[m] }}</th>{% endfor %}</tr></thead>
+<tbody>{% for agent, vals in result.agents.items() %}<tr><td>{{ agent }}</td>{% for m in report.metrics %}<td>{{ vals[m] | fmt_metric(m) }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+</table>
+<h2>Per day</h2>
+<table data-chart="per-day">
+<thead><tr><th>Day</th><th>Agent</th><th>Finished</th></tr></thead>
+<tbody>{% for day, counts in result.per_day.items() %}{% for agent, n in counts.items() %}<tr><td>{{ day }}</td><td>{{ agent }}</td><td>{{ n }}</td></tr>{% endfor %}{% endfor %}</tbody>
+</table>
+<h2>Latest items</h2>
+{% with items=result["items"] %}{% include "_work_table.html" %}{% endwith %}
+<h2>Discord preview</h2>
+<pre>{{ preview }}</pre>
+{% if is_owner %}
+<p><a href="/reports/{{ report.id }}/edit">Edit</a></p>
+<form method="post" action="/reports/{{ report.id }}/post"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button>Post to Discord now</button></form>
+<form method="post" action="/reports/{{ report.id }}/delete"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button>Delete</button></form>
+{% endif %}
+{% endblock %}

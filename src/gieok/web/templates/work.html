@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Work{% endblock %}
+{% block main %}
+<h1>Work</h1>
+<form hx-get="/work" hx-target="#work-rows" hx-trigger="change" hx-push-url="true">
+  {% for key, name in [("agents", "agent"), ("projects", "project"), ("kinds", "kind")] %}
+  <fieldset><legend>{{ name | title }}</legend>
+    {% for v in choices[key] %}<label><input type="checkbox" name="{{ name }}" value="{{ v }}"{% if v in filters[key] %} checked{% endif %}> {{ v }}</label>{% endfor %}
+  </fieldset>
+  {% endfor %}
+  <label>Days <select name="days">{% for d in [1, 7, 30, 90, 0] %}<option value="{{ d }}"{% if d == filters.days %} selected{% endif %}>{{ d or "all" }}</option>{% endfor %}</select></label>
+</form>
+<div id="work-rows">{% include "work_rows.html" %}</div>
+{% endblock %}

@@ -20,4 +20,13 @@ uv run gieok verify            # rebuild everything and check hashes
 uv run --with pytest pytest
 ```
 
+## Staff HQ (web UI)
+Memory, the agents' finished work, and saved reports, served on the tailnet address only, with Discord login.
+The guild owner edits; members with `ALLOWED_ROLE_IDS` read (no transcripts). The site never acts on an agent.
+Settings: `.env.example`. Template contract for the design: `src/gieok/web/CONTEXT.md`.
+
+```
+uv run gieok-web               # or ./deploy/install-web.sh for the systemd user service
+```
+
 Plan: `~/.claude/plans/great-let-s-work-out-temporal-rossum.md`. State: `NOTES.md`.

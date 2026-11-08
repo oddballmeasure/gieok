@@ -1,0 +1,6 @@
+<table>
+<thead><tr><th>Finished</th><th>Agent</th><th>Kind</th><th>Project</th><th>What</th><th>Outcome</th></tr></thead>
+<tbody>
+{% for item in items %}{% include "_work_item.html" %}{% else %}<tr><td colspan="6">Nothing yet.</td></tr>{% endfor %}
+</tbody>
+</table>

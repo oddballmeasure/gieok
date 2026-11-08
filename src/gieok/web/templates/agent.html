@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.name | title }}{% endblock %}
+{% block main %}
+<h1>{{ agent.name | title }}</h1>
+<p>{{ agent.role }} · {{ agent.harness }} · {% if not agent.here %}not on this host{% elif agent.healthy %}up{% else %}down{% endif %}
+   · service {{ agent.service or "–" }} ({{ agent.service_state }}) · heartbeat {{ agent.heartbeat | ago }}</p>
+{% for u in agent.usage %}<p>{{ u.label }} <meter min="0" max="1" value="{{ u.used }}">{{ (u.used * 100) | round | int }}%</meter></p>{% endfor %}
+<h2>In progress</h2>
+{% if agent.current %}<ul>{% for c in agent.current %}<li>{{ c.kind }}{% if c.id %} #{{ c.id }} {{ c.state }}{% endif %}: {{ c.title }}{% if c.pr %} · <a href="{{ c.pr }}">PR</a>{% endif %}</li>{% endfor %}</ul>
+{% else %}<p>Nothing in progress.</p>{% endif %}
+<h2>Last 7 days</h2>
+<dl>{% for m, v in week.totals.items() %}<dt>{{ m }}</dt><dd>{{ v | fmt_metric(m) }}</dd>{% endfor %}</dl>
+<h2>Recent work</h2>
+{% with items=recent %}{% include "_work_table.html" %}{% endwith %}
+{% endblock %}

@@ -1,0 +1,6 @@
+<tr>
+  <td>{{ item.finished | when }}</td><td><a href="/agents/{{ item.agent }}">{{ item.agent }}</a></td>
+  <td>{{ item.kind }}</td><td>{{ item.project }}</td>
+  <td>{% if item.link %}<a href="{{ item.link }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}</td>
+  <td>{{ item.outcome }}</td>
+</tr>

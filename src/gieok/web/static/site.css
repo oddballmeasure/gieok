@@ -1,0 +1,6 @@
+/* Placeholder until Saekdong's approved design replaces it. Keep it plain. */
+body { font: 15px/1.5 system-ui, sans-serif; margin: 0 auto; max-width: 72rem; padding: 0 1rem; }
+header, nav { display: flex; flex-wrap: wrap; gap: 1rem; align-items: baseline; }
+table { border-collapse: collapse; width: 100%; }
+td, th { border-bottom: 1px solid #ddd; padding: .25rem .5rem; text-align: left; vertical-align: top; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
