@@ -5,9 +5,12 @@ description = "Gieok (기억): the staff's shared, space-optimized, distributed 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aiohttp>=3.14",
     "blake3>=1.0",
     "fastcdc>=1.5",
+    "jinja2>=3.1",
     "numpy>=2.0",
+    "python-dotenv>=1.2",
     "zstandard>=0.23",
 ]
 
@@ -16,6 +19,7 @@ embed = ["fastembed>=0.7"]
 
 [project.scripts]
 gieok = "gieok.cli:main"
+gieok-web = "gieok.web.app:main"
 
 [build-system]
 requires = ["uv_build>=0.13,<0.14"]

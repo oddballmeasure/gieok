@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block main %}
+<h1>Reports</h1>
+{% if is_owner %}<p><a href="/reports/new">New report</a></p>{% endif %}
+{% if not webhook %}<p>Scheduled posts are off until REPORTS_WEBHOOK_URL is set.</p>{% endif %}
+<ul>
+{% for r in reports %}<li><a href="/reports/{{ r.id }}">{{ r.name }}</a> · {{ r.schedule or "not scheduled" }}{% if r.last_post %} · posted {{ r.last_post | ago }}{% endif %}</li>
+{% else %}<li>No reports yet.</li>{% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,21 @@
+# systemd user unit for Staff HQ (Gieok's web UI). deploy/install-web.sh fills in the @...@ values and installs it
+# to ~/.config/systemd/user/gieok-web.service. Don't copy it by hand.
+[Unit]
+Description=Staff HQ: Gieok's web UI for memory, the agents' work and reports (tailnet only)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+ExecStart=@UV@ run gieok-web
+Environment=PATH=@PATH@
+# The tailnet address may come up after boot: keep retrying until it can bind.
+Restart=always
+RestartSec=10
+StandardOutput=append:@LOG@
+StandardError=append:@LOG@
+
+[Install]
+WantedBy=default.target

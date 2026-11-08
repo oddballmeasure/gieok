@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}System{% endblock %}
+{% block main %}
+<h1>System</h1>
+<h2>Nodes</h2>
+<table><thead><tr><th>Node</th><th>Role</th><th>Sync lag</th></tr></thead>
+<tbody>{% for n in nodes %}<tr><td>{{ n.name }}</td><td>{{ n.role }}</td><td>{{ n.lag_s }} s</td></tr>{% endfor %}</tbody></table>
+<p>One node until sync lands (Gieok Phase 3).</p>
+<h2>Space</h2>
+<dl>{% for k, v in stats.items() %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+{% endblock %}

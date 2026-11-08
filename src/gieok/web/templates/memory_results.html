@@ -1,0 +1,8 @@
+{% if query %}
+<p>{{ hits | length }} results · {{ mode }}</p>
+<ol>{% for h in hits %}<li><a href="/memory/{{ h.memory.id }}">{{ h.memory.title or h.memory.key }}</a> · {{ h.memory.ns }} · {{ h.via }}<br>{{ h.snippet }}</li>
+{% else %}<li>No matches.</li>{% endfor %}</ol>
+{% else %}
+<ul>{% for m in listing %}<li><a href="/memory/{{ m.id }}">{{ m.title or m.key }}</a> · {{ m.ns }} · {{ m.kind }} · {{ m.tier }} · {{ m.updated | ago }}</li>
+{% else %}<li>No memories.</li>{% endfor %}</ul>
+{% endif %}
