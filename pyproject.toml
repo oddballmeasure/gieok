@@ -1,0 +1,22 @@
+[project]
+name = "gieok"
+version = "0.1.0"
+description = "Gieok (기억): the staff's shared, space-optimized, distributed memory store"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "blake3>=1.0",
+    "fastcdc>=1.5",
+    "numpy>=2.0",
+    "zstandard>=0.23",
+]
+
+[project.optional-dependencies]
+embed = ["fastembed>=0.7"]
+
+[project.scripts]
+gieok = "gieok.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
