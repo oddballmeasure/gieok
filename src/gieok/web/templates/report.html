@@ -11,32 +11,54 @@
 <div class="columns">
   <section class="panel">
     <h2>Finished per day</h2>
-    {% set scale = namespace(max=1) %}
+    {% set scale = namespace(max=0) %}
     {% for day, counts in result.per_day.items() %}
-      {% for agent, n in counts.items() %}{% if n > scale.max %}{% set scale.max = n %}{% endif %}{% endfor %}
+      {% for agent, n in counts.items() %}
+        {% if n > scale.max %}{% set scale.max = n %}{% endif %}
+      {% endfor %}
     {% endfor %}
-    {% for agent in result.agents %}
-      <figure class="daily-series">
-        <figcaption>{{ agent }} · 0–{{ scale.max }} finished</figcaption>
-        <div class="daily-bars" role="img" aria-label="{{ agent }} finished items per day; zero to {{ scale.max }}. Exact values below.">
-          {% for day, counts in result.per_day.items() %}
-            <div class="daily-day"><div class="daily-track"><span style="height: {{ counts.get(agent, 0) / scale.max * 100 }}%"></span></div><span>{{ day[5:] }}</span></div>
-          {% endfor %}
+    {% set ceiling = ((scale.max // 4) + 1) * 4 %}
+    {% if result.per_day %}
+      <div class="legend">
+        {% for agent in result.agents %}
+          <span><i{% if loop.index is even %} class="secondary"{% endif %}></i>{{ agent | capitalize }}</span>
+        {% endfor %}
+      </div>
+      <p class="meta">{{ result.per_day | first }} to {{ result.per_day | last }}</p>
+      <div class="grouped-chart" role="img" aria-label="Finished items by day and agent. Shared scale from zero to {{ ceiling }}. Exact values below.">
+        <div class="chart-ticks" aria-hidden="true">
+          {% for tick in range(4, -1, -1) %}<span>{{ ceiling * tick // 4 }}</span>{% endfor %}
         </div>
-      </figure>
-    {% else %}<p class="note">No finished items in this range.</p>{% endfor %}
+        <div class="chart-scroll" tabindex="0" role="region" aria-label="Daily chart; scroll for more dates">
+          <div class="chart-days">
+            {% for day, counts in result.per_day.items() %}
+              <div class="chart-day">
+                <div class="chart-group">
+                  {% for agent in result.agents %}
+                    <span class="chart-bar{% if loop.index is even %} secondary{% endif %}"
+                          style="height: {{ counts.get(agent, 0) / ceiling * 100 }}%"
+                          title="{{ day }} · {{ agent | capitalize }}: {{ counts.get(agent, 0) }}"></span>
+                  {% endfor %}
+                </div>
+                <span class="chart-date">{{ day[5:] }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% else %}<p class="note">No finished items in this range.</p>{% endif %}
     <details class="disclosure"><summary>Exact daily values</summary>
       <table class="data-table" data-chart="per-day">
         <thead><tr><th>Day</th><th>Agent</th><th>Finished</th></tr></thead>
         <tbody>{% for day, counts in result.per_day.items() %}{% for agent, n in counts.items() %}
-          <tr><td>{{ day }}</td><td>{{ agent }}</td><td>{{ n }}</td></tr>
+          <tr><td>{{ day }}</td><td>{{ agent | capitalize }}</td><td>{{ n }}</td></tr>
         {% endfor %}{% endfor %}</tbody>
       </table>
     </details>
   </section>
   <section class="panel"><h2>By agent</h2>
     {% for agent, vals in result.agents.items() %}
-      <div class="row"><h3>{{ agent }}</h3><dl class="statlist">
+      <div class="row"><h3>{{ agent | capitalize }}</h3><dl class="statlist">
         {% for m in report.metrics %}<div><dt>{{ metrics[m] }}</dt><dd>{{ vals[m] | fmt_metric(m) }}</dd></div>{% endfor %}
       </dl></div>
     {% endfor %}

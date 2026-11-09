@@ -12,7 +12,7 @@
 <div class="columns">
   <div>
     <section class="panel">
-      <div class="section-head"><h2>Version {{ version.id }}</h2></div>
+      <div class="section-head"><h2 title="{{ version.id }}">{% for v in history %}{% if v.id == version.id %}v{{ loop.revindex }}{% endif %}{% endfor %}{% if version.id == memory.head %} · Current{% endif %}</h2></div>
       <p class="meta">{{ version.author }} · {{ version.origin }} · {{ version.size }} B</p>
       {% if version.reason %}<p class="note">{{ version.reason }}</p>{% endif %}
       <pre class="document memory-text">{{ text }}</pre>
@@ -27,7 +27,7 @@
     <ol class="history" reversed>
       {% for v in history %}
         <li{% if v.id == version.id %} class="selected"{% endif %}>
-          <a href="/memory/{{ memory.id }}?v={{ v.id }}"{% if v.id == version.id %} aria-current="true"{% endif %}>Version {{ v.id }}</a>
+          <a href="/memory/{{ memory.id }}?v={{ v.id }}"{% if v.id == version.id %} aria-current="true"{% endif %} title="{{ v.id }}">v{{ loop.revindex }}{% if v.id == memory.head %} · Current{% endif %}</a>
           <p>{{ v.author }} · {{ v.origin }} · {{ v.size }} B</p>
           {% if v.reason %}<p>{{ v.reason }}</p>{% endif %}
           {% if v.batch %}<p>Batch {{ v.batch }}</p>{% endif %}
