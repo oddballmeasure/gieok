@@ -1,6 +1,54 @@
-{% extends "base.html" %}{% import '_agent_parts.html' as parts %}
-{% block title %}Overview{% endblock %}{% block main %}
-<div class="page-head"><div><h1>Overview</h1><p class="muted">Staff activity on {{ site.node }}</p></div></div>
-<section aria-labelledby="staff-heading"><div class="section-head"><h2 id="staff-heading">Staff</h2><span class="meta">{{ staff | selectattr('here') | list | length }} on this host</span></div><div class="staff">
-{% for a in staff %}<article class="agent"><div class="agent-top">{{ parts.identity(a,site.node,true) }}{{ parts.health(a) }}</div><p class="health">Service {{ a.service_state }} · Heartbeat {{ a.heartbeat | ago }}</p><div class="activity"><p class="label">In progress</p>{{ parts.current(a) }}</div><div class="last">{% set l=last[a.name] %}{% if l %}<span class="label">Last finished · {{ l.finished | ago }}</span><a href="{{ l.link or '/work' }}">{{ l.title }}</a>{% else %}<span class="label">No finished work yet.</span>{% endif %}</div><div class="usage"><p class="usage-heading">{{ a.harness | title }} usage</p>{{ parts.usage(a) }}</div></article>{% endfor %}</div></section>
-<section class="finished"><div class="section-head"><h2>Finished today <span class="muted">/ {{ done_today | length }}</span></h2><a href="/work">View all work</a></div>{% with items=done_today %}{% include '_work_table.html' %}{% endwith %}</section>{% endblock %}
+{% extends "base.html" %}
+{% import '_agent_parts.html' as parts %}
+{% block title %}Overview{% endblock %}
+{% block main %}
+  <div class="page-head">
+    <div>
+      <h1>Overview</h1>
+      <p class="muted">Staff activity on {{ site.node }}</p>
+    </div>
+  </div>
+  <section aria-labelledby="staff-heading">
+    <div class="section-head">
+      <h2 id="staff-heading">Staff</h2>
+      <span class="meta">{{ staff | selectattr('here') | list | length }} on this host</span>
+    </div>
+    <div class="staff">
+      {% for a in staff %}
+        <article class="agent">
+          <div class="agent-top">
+            {{ parts.identity(a, site.node, true) }}
+            {{ parts.health(a) }}
+          </div>
+          <p class="health">Service {{ a.service_state }} · Heartbeat {{ a.heartbeat | ago }}</p>
+          <div class="activity">
+            <p class="label">In progress</p>
+            {{ parts.current(a) }}
+          </div>
+          <div class="last">
+            {% set l = last[a.name] %}
+            {% if l %}
+              <span class="label">Last finished · {{ l.finished | ago }}</span>
+              <a href="{{ l.link or '/work' }}">{{ l.title }}</a>
+            {% else %}
+              <span class="label">No finished work yet.</span>
+            {% endif %}
+          </div>
+          <div class="usage">
+            <p class="usage-heading">{{ a.harness | title }} usage</p>
+            {{ parts.usage(a) }}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="finished">
+    <div class="section-head">
+      <h2>Finished today <span class="muted">/ {{ done_today | length }}</span></h2>
+      <a href="/work">View all work</a>
+    </div>
+    {% with items=done_today %}
+      {% include '_work_table.html' %}
+    {% endwith %}
+  </section>
+{% endblock %}

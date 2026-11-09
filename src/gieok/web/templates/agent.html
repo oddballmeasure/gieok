@@ -1,3 +1,54 @@
-{% extends 'base.html' %}{% import '_agent_parts.html' as parts %}{% block title %}{{ agent.name | title }}{% endblock %}{% block main %}
-<div class="page-head"><div><h1>{{ agent.name | title }}</h1><p class="muted">Agent activity, health and usage</p></div></div>
-<div class="columns"><section><div class="agent-identity">{{ parts.identity(agent,site.node) }}{{ parts.health(agent) }}</div><p class="notice">Service {{ agent.service or '–' }} {{ agent.service_state }} · Heartbeat {{ agent.heartbeat | ago }}</p><section><h2>In progress</h2><div class="row activity-detail">{{ parts.current(agent) }}</div></section><section><h2>Last 7 days</h2><div class="metrics">{% for key,label in [('items_done','Finished'),('failures','Failed'),('time_to_done','Median time to done')] %}<div><strong>{{ week.totals[key] | fmt_metric(key) }}</strong><span>{{ label }}</span></div>{% endfor %}</div></section></section><aside class="panel"><h2>{{ agent.harness | title }} usage</h2><div class="agent-usage">{{ parts.usage(agent) }}</div><p class="note">Agent status is view-only.</p></aside></div><section><h2>Recent work</h2>{% with items=recent %}{% include '_work_table.html' %}{% endwith %}</section>{% endblock %}
+{% extends 'base.html' %}
+{% import '_agent_parts.html' as parts %}
+{% block title %}{{ agent.name | title }}{% endblock %}
+{% block main %}
+  <div class="page-head">
+    <div>
+      <h1>{{ agent.name | title }}</h1>
+      <p class="muted">Agent activity, health and usage</p>
+    </div>
+  </div>
+  <div class="columns">
+    <section>
+      <div class="agent-identity">
+        {{ parts.identity(agent, site.node) }}
+        {{ parts.health(agent) }}
+      </div>
+      <p class="notice">Service {{ agent.service or '–' }} {{ agent.service_state }} · Heartbeat {{ agent.heartbeat | ago }}</p>
+      <section>
+        <h2>In progress</h2>
+        <div class="row activity-detail">
+          {{ parts.current(agent) }}
+        </div>
+      </section>
+      <section>
+        <h2>Last 7 days</h2>
+        <div class="metrics">
+          {% for key, label in [
+            ('items_done', 'Finished'),
+            ('failures', 'Failed'),
+            ('time_to_done', 'Median time to done')
+          ] %}
+            <div>
+              <strong>{{ week.totals[key] | fmt_metric(key) }}</strong>
+              <span>{{ label }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+    </section>
+    <aside class="panel">
+      <h2>{{ agent.harness | title }} usage</h2>
+      <div class="agent-usage">
+        {{ parts.usage(agent) }}
+      </div>
+      <p class="note">Agent status is view-only.</p>
+    </aside>
+  </div>
+  <section>
+    <h2>Recent work</h2>
+    {% with items=recent %}
+      {% include '_work_table.html' %}
+    {% endwith %}
+  </section>
+{% endblock %}

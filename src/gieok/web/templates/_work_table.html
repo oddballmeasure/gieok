@@ -1,1 +1,20 @@
-<table class="work-table"><thead><tr><th scope="col">Finished</th><th scope="col">Agent / Project</th><th scope="col">Kind</th><th scope="col">What</th><th scope="col">Outcome</th></tr></thead><tbody>{% for item in items %}{% include '_work_item.html' %}{% else %}<tr class="empty-row"><td colspan="5">{{ empty_message | default('Nothing yet.') }}</td></tr>{% endfor %}</tbody></table>
+<table class="work-table">
+  <thead>
+    <tr>
+      <th scope="col">Finished</th>
+      <th scope="col">Agent / Project</th>
+      <th scope="col">Kind</th>
+      <th scope="col">What</th>
+      <th scope="col">Outcome</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+      {% include '_work_item.html' %}
+    {% else %}
+      <tr class="empty-row">
+        <td colspan="5">{{ empty_message | default('Nothing yet.') }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>

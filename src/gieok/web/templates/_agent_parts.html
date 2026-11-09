@@ -1,4 +1,54 @@
-{% macro identity(a, node, overview=false) %}<div class="identity"><span class="avatar" aria-hidden="true">{{ '대' if a.name == 'daepyo' else '색' if a.name == 'saekdong' else a.name[0] | upper }}</span><div>{% if overview %}<h3><a href="/agents/{{ a.name | urlencode }}">{{ a.name | title }}</a></h3><p class="meta">{{ a.role | capitalize }} / {{ a.harness | title }}</p>{% else %}<h2>{{ a.role | capitalize }} / {{ a.harness | title }}</h2><p class="meta">{{ 'On this host · ' ~ node if a.here else 'not on this host' }}</p>{% endif %}</div></div>{% endmacro %}
-{% macro health(a) %}<span class="badge {{ 'up' if a.here and a.healthy else 'down' if a.here else '' }}">{{ 'not on this host' if not a.here else 'Up' if a.healthy else 'Down' }}</span>{% endmacro %}
-{% macro current(a) %}{% for c in a.current %}<div class="current-item"><p class="title">{{ c.title }}</p><p class="meta">{{ c.kind | title }}{% if c.id %} #{{ c.id }}{% endif %}{% if c.project %} · {{ c.project }}{% endif %}{% if c.state %} · {{ c.state }}{% endif %}</p>{% if c.pr %}<a class="meta action-link" href="{{ c.pr }}">Open pull request</a>{% endif %}</div>{% else %}<p class="muted">Nothing in progress.</p>{% endfor %}{% endmacro %}
-{% macro usage(a) %}{% for u in a.usage %}{% set percent = (u.used * 100) | round | int %}<div class="meter-item"><div class="meter-label"><span>{{ u.label }}</span><strong>{{ percent }}%</strong></div><meter min="0" max="1" value="{{ u.used }}" aria-label="{{ u.label }}: {{ percent }}% used">{{ percent }}%</meter><div class="reset"><span>Used</span><span>Resets {{ u.resets_at | when }}</span></div></div>{% else %}<p class="meta">No usage available.</p>{% endfor %}{% endmacro %}
+{% macro identity(a, node, overview=false) %}
+  <div class="identity">
+    <span class="avatar" aria-hidden="true">{{ '대' if a.name == 'daepyo' else '색' if a.name == 'saekdong' else a.name[0] | upper }}</span>
+    <div>
+      {% if overview %}
+        <h3><a href="/agents/{{ a.name | urlencode }}">{{ a.name | title }}</a></h3>
+        <p class="meta">{{ [a.role | default('', true) | capitalize, a.harness | default('', true) | title] | select | join(' / ') }}</p>
+      {% else %}
+        <h2>{{ [a.role | default('', true) | capitalize, a.harness | default('', true) | title] | select | join(' / ') }}</h2>
+        <p class="meta">{{ ['On this host', node] | select | join(' · ') if a.here else 'not on this host' }}</p>
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro health(a) %}
+  <span class="badge {{ 'up' if a.here and a.healthy else 'down' if a.here else '' }}">{{ 'not on this host' if not a.here else 'Up' if a.healthy else 'Down' }}</span>
+{% endmacro %}
+
+{% macro current(a) %}
+  {% for c in a.current %}
+    <div class="current-item">
+      <p class="title">{{ c.title }}</p>
+      {% set kind = c.kind | default('', true) | title %}
+      {% set reference = [kind, '#' ~ c.id if c.id else ''] | select | join(' ') %}
+      <p class="meta">{{ [reference, c.project, c.state] | select | join(' · ') }}</p>
+      {% if c.pr %}
+        <a class="meta action-link" href="{{ c.pr }}">Open pull request</a>
+      {% endif %}
+    </div>
+  {% else %}
+    <p class="muted">Nothing in progress.</p>
+  {% endfor %}
+{% endmacro %}
+
+{% macro usage(a) %}
+  {% for u in a.usage %}
+    {% set percent = (u.used * 100) | round | int %}
+    <div class="meter-item">
+      <div class="meter-label">
+        <span>{{ u.label }}</span>
+        <strong>{{ percent }}%</strong>
+      </div>
+      <meter min="0" max="1" value="{{ u.used }}"
+             aria-label="{{ u.label }}: {{ percent }}% used">{{ percent }}%</meter>
+      <div class="reset">
+        <span>Used</span>
+        <span>Resets {{ u.resets_at | when }}</span>
+      </div>
+    </div>
+  {% else %}
+    <p class="meta">No usage available.</p>
+  {% endfor %}
+{% endmacro %}
