@@ -83,7 +83,8 @@ def session_key(root: Path) -> bytes:
 
 
 DEFAULT_AGENTS = ("daepyo:claude:~/oscar/state:oscar.service,"
-                  "saekdong:codex:~/saekdong/state:saekdong.service")
+                  "saekdong:codex:~/saekdong/state:saekdong.service,"
+                  "bora:claude:~/bora-agent/state:bora.service")
 
 
 def load() -> WebConfig:
