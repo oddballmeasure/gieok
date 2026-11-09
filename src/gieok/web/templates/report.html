@@ -1,26 +1,78 @@
 {% extends "base.html" %}
 {% block title %}{{ report.name }}{% endblock %}
 {% block main %}
-<h1>{{ report.name }}</h1>
-<p>{{ "last %d days" % report.filters.days if report.filters.days else "all time" }} · {{ report.schedule or "not scheduled" }}
-  · {{ result.count }} items</p>
-<dl>{% for m in report.metrics %}<dt>{{ metrics[m] }}</dt><dd>{{ result.totals[m] | fmt_metric(m) }}</dd>{% endfor %}</dl>
-<table>
-<thead><tr><th>Agent</th>{% for m in report.metrics %}<th>{{ metrics[m] }}</th>{% endfor %}</tr></thead>
-<tbody>{% for agent, vals in result.agents.items() %}<tr><td>{{ agent }}</td>{% for m in report.metrics %}<td>{{ vals[m] | fmt_metric(m) }}</td>{% endfor %}</tr>{% endfor %}</tbody>
-</table>
-<h2>Per day</h2>
-<table data-chart="per-day">
-<thead><tr><th>Day</th><th>Agent</th><th>Finished</th></tr></thead>
-<tbody>{% for day, counts in result.per_day.items() %}{% for agent, n in counts.items() %}<tr><td>{{ day }}</td><td>{{ agent }}</td><td>{{ n }}</td></tr>{% endfor %}{% endfor %}</tbody>
-</table>
-<h2>Latest items</h2>
-{% with items=result["items"] %}{% include "_work_table.html" %}{% endwith %}
-<h2>Discord preview</h2>
-<pre>{{ preview }}</pre>
+<div class="page-head"><div>
+  <h1>{{ report.name }}</h1>
+  <p class="muted">{{ "Last %d days" % report.filters.days if report.filters.days else "All time" }} · {{ report.schedule or "Not scheduled" }} · {{ result.count }} items</p>
+</div></div>
+<div class="metrics">
+  {% for m in report.metrics %}<div><strong>{{ result.totals[m] | fmt_metric(m) }}</strong><span>{{ metrics[m] }}</span></div>{% endfor %}
+</div>
+<div class="columns">
+  <section class="panel">
+    <h2>Finished per day</h2>
+    {% set scale = namespace(max=0) %}
+    {% for day, counts in result.per_day.items() %}
+      {% for agent, n in counts.items() %}
+        {% if n > scale.max %}{% set scale.max = n %}{% endif %}
+      {% endfor %}
+    {% endfor %}
+    {% set ceiling = ((scale.max // 4) + 1) * 4 %}
+    {% if result.per_day %}
+      <div class="legend">
+        {% for agent in result.agents %}
+          <span><i{% if loop.index is even %} class="secondary"{% endif %}></i>{{ agent | capitalize }}</span>
+        {% endfor %}
+      </div>
+      <p class="meta">{{ result.per_day | first }} to {{ result.per_day | last }}</p>
+      <div class="grouped-chart" role="img" aria-label="Finished items by day and agent. Shared scale from zero to {{ ceiling }}. Exact values below.">
+        <div class="chart-ticks" aria-hidden="true">
+          {% for tick in range(4, -1, -1) %}<span>{{ ceiling * tick // 4 }}</span>{% endfor %}
+        </div>
+        <div class="chart-scroll" tabindex="0" role="region" aria-label="Daily chart; scroll for more dates">
+          <div class="chart-days">
+            {% for day, counts in result.per_day.items() %}
+              <div class="chart-day">
+                <div class="chart-group">
+                  {% for agent in result.agents %}
+                    <span class="chart-bar{% if loop.index is even %} secondary{% endif %}"
+                          style="height: {{ counts.get(agent, 0) / ceiling * 100 }}%"
+                          title="{{ day }} · {{ agent | capitalize }}: {{ counts.get(agent, 0) }}"></span>
+                  {% endfor %}
+                </div>
+                <span class="chart-date">{{ day[5:] }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% else %}<p class="note">No finished items in this range.</p>{% endif %}
+    <details class="disclosure"><summary>Exact daily values</summary>
+      <table class="data-table" data-chart="per-day">
+        <thead><tr><th>Day</th><th>Agent</th><th>Finished</th></tr></thead>
+        <tbody>{% for day, counts in result.per_day.items() %}{% for agent, n in counts.items() %}
+          <tr><td>{{ day }}</td><td>{{ agent | capitalize }}</td><td>{{ n }}</td></tr>
+        {% endfor %}{% endfor %}</tbody>
+      </table>
+    </details>
+  </section>
+  <section class="panel"><h2>By agent</h2>
+    {% for agent, vals in result.agents.items() %}
+      <div class="row"><h3>{{ agent | capitalize }}</h3><dl class="statlist">
+        {% for m in report.metrics %}<div><dt>{{ metrics[m] }}</dt><dd>{{ vals[m] | fmt_metric(m) }}</dd></div>{% endfor %}
+      </dl></div>
+    {% endfor %}
+  </section>
+</div>
+<section><h2>Latest items</h2>
+  {% with items=result["items"] %}{% include "_work_table.html" %}{% endwith %}
+</section>
+<section class="panel"><h2>Discord preview</h2><pre class="preview">{{ preview }}</pre></section>
 {% if is_owner %}
-<p><a href="/reports/{{ report.id }}/edit">Edit</a></p>
-<form method="post" action="/reports/{{ report.id }}/post"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button>Post to Discord now</button></form>
-<form method="post" action="/reports/{{ report.id }}/delete"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button>Delete</button></form>
+  <div class="actions">
+    <a class="button" href="/reports/{{ report.id }}/edit">Edit report</a>
+    <form method="post" action="/reports/{{ report.id }}/post"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="primary">Post to Discord now</button></form>
+    <form method="post" action="/reports/{{ report.id }}/delete" data-confirm="Delete this saved report?"><input type="hidden" name="csrf" value="{{ user.csrf }}"><button class="danger">Delete report</button></form>
+  </div>
 {% endif %}
 {% endblock %}

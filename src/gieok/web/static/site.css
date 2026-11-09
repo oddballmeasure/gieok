@@ -1487,3 +1487,109 @@ textarea {
 .agent .usage {
   margin-top: auto;
 }
+
+/* Reports — fixed-width grouped bars, one shared scale, scrollable dates. */
+.grouped-chart {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.chart-ticks {
+  flex: 0 0 24px;
+  height: 160px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: right;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.chart-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.chart-days {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  background: repeating-linear-gradient(
+    to top, var(--line) 0 1px, transparent 1px 40px
+  ) 0 0 / 100% 160px no-repeat;
+}
+
+.chart-day {
+  flex: 0 0 auto;
+  min-width: 72px;
+}
+
+.chart-group {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 4px;
+  height: 160px;
+  padding: 0 16px;
+}
+
+.chart-bar {
+  flex: 0 0 16px;
+  background: var(--accent);
+}
+
+.chart-bar.secondary {
+  background: var(--muted);
+}
+
+.chart-date {
+  display: block;
+  padding-top: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.legend {
+  flex-wrap: wrap;
+}
+
+.preview,
+.memory-text,
+.diff {
+  margin-top: 20px;
+}
+
+.memory-text {
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+.page-head h1,
+.row h3 {
+  overflow-wrap: anywhere;
+}
+
+.actions form {
+  margin: 0;
+}
+
+#memory-results.htmx-request {
+  opacity: .55;
+}
+
+@media(max-width:760px) {
+  .actions form,
+  .actions form button {
+    width: 100%;
+  }
+}
+
+/* Documents — long version IDs stay within their reading surface. */
+.panel h2,
+.history a {
+  overflow-wrap: anywhere;
+}

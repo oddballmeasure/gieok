@@ -1,12 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Transcripts{% endblock %}
 {% block main %}
-<h1>Transcripts</h1>
-<form action="/transcripts"><input name="q" type="search" value="{{ query }}" placeholder="Search transcripts"><button>Search</button></form>
-<table>
-<thead><tr><th>Ended</th><th>Agent</th><th>Host</th><th>Project</th><th>Source</th></tr></thead>
-<tbody>{% for r in rows %}<tr><td>{{ (r.ended or r.started) | when }}</td><td>{{ r.agent }}</td><td>{{ r.host }}</td><td>{{ r.project }}</td>
-<td><a href="/transcripts/{{ r.rid }}">{{ r.source.rsplit("/", 1)[-1] }}</a></td></tr>
-{% else %}<tr><td colspan="5">No transcripts.</td></tr>{% endfor %}</tbody>
-</table>
+<div class="page-head"><div><h1>Transcripts</h1><p class="muted">Agent session records · Owner access</p></div></div>
+<form class="search" action="/transcripts">
+  <input name="q" type="search" aria-label="Search transcripts" value="{{ query }}" placeholder="Search transcripts"><button>Search</button>
+</form>
+<section>
+  {% for r in rows %}
+    <article class="row">
+      <h3><a href="/transcripts/{{ r.rid }}">{{ r.source.rsplit("/", 1)[-1] }}</a></h3>
+      <p>{{ r.agent }} · {{ r.host }} · {{ r.project }}</p>
+      <p class="meta">Ended {{ (r.ended or r.started) | when }}</p>
+    </article>
+  {% else %}<p class="empty">No transcripts match this search.</p>{% endfor %}
+</section>
 {% endblock %}

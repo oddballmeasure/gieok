@@ -6,3 +6,9 @@ if (filters) {
   update();
   desktop.addEventListener('change', update);
 }
+
+// Confirm destructive actions before sending their POST forms.
+document.addEventListener('submit', (event) => {
+  const message = event.target.dataset.confirm;
+  if (message && !window.confirm(message)) event.preventDefault();
+});

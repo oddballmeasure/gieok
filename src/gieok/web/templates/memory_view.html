@@ -1,32 +1,58 @@
 {% extends "base.html" %}
 {% block title %}{{ memory.title or memory.key }}{% endblock %}
 {% block main %}
-<h1>{{ memory.title or memory.key }}</h1>
-<p>{{ memory.ns }}/{{ memory.key }} · {{ memory.kind }} · {{ memory.tier }}{% if memory.deleted %} · forgotten{% endif %}
-  · tags {{ memory.tags | join(", ") or "–" }}</p>
-{% if conflicts %}<p role="alert">{{ conflicts | length }} conflicting versions</p>{% endif %}
-<p>Version {{ version.id }} by {{ version.author }} on {{ version.origin }}{% if version.reason %} · {{ version.reason }}{% endif %}</p>
-<pre>{{ text }}</pre>
-<h2>Change from the previous version</h2>
-<pre>{% for line in diff %}{{ line }}
-{% endfor %}</pre>
-<h2>History</h2>
-<ol reversed>{% for v in history %}<li><a href="/memory/{{ memory.id }}?v={{ v.id }}">{{ v.id }}</a> · {{ v.author }} · {{ v.origin }} · {{ v.size }} B{% if v.reason %} · {{ v.reason }}{% endif %}{% if v.batch %} · batch {{ v.batch }}{% endif %}</li>{% endfor %}</ol>
-{% if is_owner %}
-<h2>Edit</h2>
-<form method="post" action="/memory/{{ memory.id }}/edit">
-  <input type="hidden" name="csrf" value="{{ user.csrf }}">
-  <label>Title <input name="title" value="{{ memory.title }}"></label>
-  <textarea name="text" rows="16">{{ text }}</textarea>
-  <label>Why <input name="reason" placeholder="edited in Staff HQ"></label>
-  <button>Save new version</button>
-</form>
-{% if not memory.deleted %}
-<form method="post" action="/memory/{{ memory.id }}/forget">
-  <input type="hidden" name="csrf" value="{{ user.csrf }}">
-  <label>Why <input name="reason"></label>
-  <button>Forget</button>
-</form>
-{% endif %}
-{% endif %}
+<div class="page-head"><div>
+  <h1>{{ memory.title or memory.key }}</h1>
+  <p class="muted">{{ memory.ns }}/{{ memory.key }} · {{ memory.kind }} · {{ memory.tier }}</p>
+  <p class="meta">Tags: {{ memory.tags | join(", ") or "–" }}</p>
+  {% if memory.deleted %}<span class="badge">Forgotten</span>{% endif %}
+</div></div>
+{% if conflicts %}<p class="notice" role="alert">{{ conflicts | length }} conflicting versions</p>{% endif %}
+{% if version.id != memory.head %}<p class="notice">Historical version. <a class="action-link" href="/memory/{{ memory.id }}">Return to current version</a> to edit.</p>{% endif %}
+<div class="columns">
+  <div>
+    <section class="panel">
+      <div class="section-head"><h2 title="{{ version.id }}">{% for v in history %}{% if v.id == version.id %}v{{ loop.revindex }}{% endif %}{% endfor %}{% if version.id == memory.head %} · Current{% endif %}</h2></div>
+      <p class="meta">{{ version.author }} · {{ version.origin }} · {{ version.size }} B</p>
+      {% if version.reason %}<p class="note">{{ version.reason }}</p>{% endif %}
+      <pre class="document memory-text">{{ text }}</pre>
+    </section>
+    <section class="panel"><h2>Change from the previous version</h2>
+      {% if version.parent %}
+        <pre class="diff">{% for line in diff %}<span class="{{ 'add' if line.startswith('+') else 'remove' if line.startswith('-') else 'context' }}">{{ line }}</span>{% endfor %}</pre>
+      {% else %}<p class="note">First version; no previous text.</p>{% endif %}
+    </section>
+  </div>
+  <aside class="panel"><h2>History</h2>
+    <ol class="history" reversed>
+      {% for v in history %}
+        <li{% if v.id == version.id %} class="selected"{% endif %}>
+          <a href="/memory/{{ memory.id }}?v={{ v.id }}"{% if v.id == version.id %} aria-current="true"{% endif %} title="{{ v.id }}">v{{ loop.revindex }}{% if v.id == memory.head %} · Current{% endif %}</a>
+          <p>{{ v.author }} · {{ v.origin }} · {{ v.size }} B</p>
+          {% if v.reason %}<p>{{ v.reason }}</p>{% endif %}
+          {% if v.batch %}<p>Batch {{ v.batch }}</p>{% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+  </aside>
+</div>
+{% if is_owner and version.id == memory.head and not memory.deleted %}
+  <section class="panel"><h2>Edit memory</h2>
+    <form method="post" action="/memory/{{ memory.id }}/edit">
+      <input type="hidden" name="csrf" value="{{ user.csrf }}">
+      <label class="field">Title <input name="title" value="{{ memory.title }}"></label>
+      <label class="field">Text <textarea name="text" rows="10">{{ text }}</textarea></label>
+      <label class="field">Reason <input name="reason" required placeholder="What changed and why?"></label>
+      <button class="primary">Save new version</button>
+    </form>
+  </section>
+  <section class="panel"><h2>Forget memory</h2>
+    <p class="note">Remove this memory from active search.</p>
+    <form method="post" action="/memory/{{ memory.id }}/forget" data-confirm="Forget this memory and remove it from active search?">
+      <input type="hidden" name="csrf" value="{{ user.csrf }}">
+      <label class="field">Reason <input name="reason" required></label>
+      <button class="danger">Forget memory</button>
+    </form>
+  </section>
+{% elif not is_owner %}<p class="notice">Read-only access. The owner can edit or forget this memory.</p>{% endif %}
 {% endblock %}

@@ -1,8 +1,21 @@
 {% if query %}
-<p>{{ hits | length }} results · {{ mode }}</p>
-<ol>{% for h in hits %}<li><a href="/memory/{{ h.memory.id }}">{{ h.memory.title or h.memory.key }}</a> · {{ h.memory.ns }} · {{ h.via }}<br>{{ h.snippet }}</li>
-{% else %}<li>No matches.</li>{% endfor %}</ol>
+  <div class="section-head"><h2>{{ hits | length }} results</h2><span class="badge">{{ "Hybrid" if mode == "hybrid" else "Keyword" }} search</span></div>
+  <section class="panel">
+    {% for h in hits %}
+      <article class="row">
+        <h3><a href="/memory/{{ h.memory.id }}">{{ h.memory.title or h.memory.key }}</a></h3>
+        <p class="meta">{{ h.memory.ns }} · {{ h.via }} · Score {{ '%.3f' | format(h.score) }}</p>
+        <p>{{ h.snippet }}</p>
+      </article>
+    {% else %}<p>No matches. Try another term or namespace.</p>{% endfor %}
+  </section>
 {% else %}
-<ul>{% for m in listing %}<li><a href="/memory/{{ m.id }}">{{ m.title or m.key }}</a> · {{ m.ns }} · {{ m.kind }} · {{ m.tier }} · {{ m.updated | ago }}</li>
-{% else %}<li>No memories.</li>{% endfor %}</ul>
+  <section class="panel"><h2>{{ ns or "All namespaces" }}</h2>
+    {% for m in listing %}
+      <article class="row">
+        <h3><a href="/memory/{{ m.id }}">{{ m.title or m.key }}</a></h3>
+        <p class="meta">{{ m.ns }} · {{ m.kind }} · {{ m.tier }} · Updated {{ m.updated | ago }}</p>
+      </article>
+    {% else %}<p>No memories in this namespace.</p>{% endfor %}
+  </section>
 {% endif %}
