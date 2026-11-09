@@ -1,6 +1,28 @@
 <tr>
-  <td>{{ item.finished | when }}</td><td><a href="/agents/{{ item.agent }}">{{ item.agent }}</a></td>
-  <td>{{ item.kind }}</td><td>{{ item.project }}</td>
-  <td>{% if item.link %}<a href="{{ item.link }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}</td>
-  <td>{{ item.outcome }}</td>
+  <td class="desktop-cell">{{ item.finished | when }}</td>
+  <td class="desktop-cell">
+    <a href="/agents/{{ item.agent | urlencode }}">{{ item.agent | title }}</a>
+    {% if item.project %}
+      <div class="meta">{{ item.project }}</div>
+    {% endif %}
+  </td>
+  <td class="desktop-cell">{{ item.kind }}</td>
+  <td class="title-cell">
+    {% if item.link %}
+      <a href="{{ item.link }}">{{ item.title }}</a>
+    {% else %}
+      {{ item.title }}
+    {% endif %}
+    <div class="meta mobile-detail">
+      {%- if item.agent -%}
+        <a href="/agents/{{ item.agent | urlencode }}">{{ item.agent | title }}</a>
+      {%- endif -%}
+      {%- if item.agent and item.project %} · {% endif -%}
+      {{ item.project or '' }}<br>
+      {{- [item.finished | when, item.kind] | select | join(' · ') }}
+    </div>
+  </td>
+  <td class="outcome">
+    <span class="badge {{ item.outcome }}">{{ item.outcome | title }}</span>
+  </td>
 </tr>

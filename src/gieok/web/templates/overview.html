@@ -1,22 +1,54 @@
 {% extends "base.html" %}
+{% import '_agent_parts.html' as parts %}
 {% block title %}Overview{% endblock %}
 {% block main %}
-<h1>Overview</h1>
-<section>
-{% for a in staff %}
-  <article>
-    <h2><a href="/agents/{{ a.name }}">{{ a.name | title }}</a></h2>
-    <p>{{ a.role }} · {{ a.harness }} · {% if not a.here %}not on this host{% elif a.healthy %}up{% else %}down{% endif %}
-       · service {{ a.service_state }} · heartbeat {{ a.heartbeat | ago }}</p>
-    {% if a.current %}<ul>{% for c in a.current %}<li>{{ c.kind }}{% if c.id %} #{{ c.id }} {{ c.state }}{% endif %}: {{ c.title }}</li>{% endfor %}</ul>
-    {% else %}<p>Nothing in progress.</p>{% endif %}
-    {% set l = last[a.name] %}{% if l %}<p>Last finished: {{ l.title }} · {{ l.finished | ago }}</p>{% endif %}
-    {% for u in a.usage %}<p>{{ u.label }} <meter min="0" max="1" value="{{ u.used }}">{{ (u.used * 100) | round | int }}%</meter></p>{% endfor %}
-  </article>
-{% endfor %}
-</section>
-<section>
-<h2>Finished today</h2>
-{% with items=done_today %}{% include "_work_table.html" %}{% endwith %}
-</section>
+  <div class="page-head">
+    <div>
+      <h1>Overview</h1>
+      <p class="muted">Staff activity on {{ site.node }}</p>
+    </div>
+  </div>
+  <section aria-labelledby="staff-heading">
+    <div class="section-head">
+      <h2 id="staff-heading">Staff</h2>
+      <span class="meta">{{ staff | selectattr('here') | list | length }} on this host</span>
+    </div>
+    <div class="staff">
+      {% for a in staff %}
+        <article class="agent">
+          <div class="agent-top">
+            {{ parts.identity(a, site.node, true) }}
+            {{ parts.health(a) }}
+          </div>
+          <p class="health">Service {{ a.service_state }} · Heartbeat {{ a.heartbeat | ago }}</p>
+          <div class="activity">
+            <p class="label">In progress</p>
+            {{ parts.current(a) }}
+          </div>
+          <div class="last">
+            {% set l = last[a.name] %}
+            {% if l %}
+              <span class="label">Last finished · {{ l.finished | ago }}</span>
+              <a href="{{ l.link or '/work' }}">{{ l.title }}</a>
+            {% else %}
+              <span class="label">No finished work yet.</span>
+            {% endif %}
+          </div>
+          <div class="usage">
+            <p class="usage-heading">{{ a.harness | title }} usage</p>
+            {{ parts.usage(a) }}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="finished">
+    <div class="section-head">
+      <h2>Finished today <span class="muted">/ {{ done_today | length }}</span></h2>
+      <a href="/work">View all work</a>
+    </div>
+    {% with items=done_today %}
+      {% include '_work_table.html' %}
+    {% endwith %}
+  </section>
 {% endblock %}
