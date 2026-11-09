@@ -1,1 +1,1 @@
-{% include "_work_table.html" %}
+<div class="section-head"><h2>Work items</h2><span id="work-count" role="status" class="meta">{{ items | length }} {{ 'item' if items | length == 1 else 'items' }}</span></div>{% with empty_message='No work matches these filters.' %}{% include '_work_table.html' %}{% endwith %}{% if not items %}<p class="note"><a class="action-link" href="/work">Clear filters</a></p>{% endif %}

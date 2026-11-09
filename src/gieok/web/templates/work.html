@@ -1,14 +1,4 @@
-{% extends "base.html" %}
-{% block title %}Work{% endblock %}
-{% block main %}
-<h1>Work</h1>
-<form hx-get="/work" hx-target="#work-rows" hx-trigger="change" hx-push-url="true">
-  {% for key, name in [("agents", "agent"), ("projects", "project"), ("kinds", "kind")] %}
-  <fieldset><legend>{{ name | title }}</legend>
-    {% for v in choices[key] %}<label><input type="checkbox" name="{{ name }}" value="{{ v }}"{% if v in filters[key] %} checked{% endif %}> {{ v }}</label>{% endfor %}
-  </fieldset>
-  {% endfor %}
-  <label>Days <select name="days">{% for d in [1, 7, 30, 90, 0] %}<option value="{{ d }}"{% if d == filters.days %} selected{% endif %}>{{ d or "all" }}</option>{% endfor %}</select></label>
-</form>
-<div id="work-rows">{% include "work_rows.html" %}</div>
-{% endblock %}
+{% extends 'base.html' %}{% block title %}Work{% endblock %}{% block main %}<div class="page-head"><div><h1>Work</h1><p class="muted">Tasks, sessions, scheduled runs and pull requests</p></div></div>
+<details class="work-filters"><summary>Filters</summary><form id="work-filter" class="panel filters" action="/work" method="get" hx-get="/work" hx-target="#work-rows" hx-trigger="change, submit" hx-push-url="true" hx-indicator="#work-rows">
+{% for key,name,label in [('agents','agent','Agents'),('projects','project','Projects'),('kinds','kind','Kinds')] %}<fieldset><legend>{{ label }}</legend><div class="stack">{% for v in choices[key] %}<label class="chip"><input type="checkbox" name="{{ name }}" value="{{ v }}"{% if v in filters[key] %} checked{% endif %}> {{ v | title if name == 'agent' else 'PR' if v == 'pr' else v | capitalize if name == 'kind' else v }}</label>{% endfor %}</div></fieldset>{% endfor %}<div><label class="field">Days<select name="days">{% for d in [1,7,30,90,0] %}<option value="{{ d }}"{% if d == filters.days %} selected{% endif %}>{{ (d ~ ' days') if d > 1 else '1 day' if d else 'All time' }}</option>{% endfor %}</select></label><button type="submit">Apply filters</button></div></form></details>
+<section id="work-rows" aria-live="polite" aria-label="Work results">{% include 'work_rows.html' %}</section>{% endblock %}

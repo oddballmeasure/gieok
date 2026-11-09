@@ -1,29 +1,8 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Staff HQ{% endblock %} · Staff HQ</title>
-<link rel="stylesheet" href="/static/site.css">
-<script src="/static/htmx.min.js" defer></script>
-</head>
-<body hx-headers='{"X-CSRF-Token": "{{ user.csrf }}"}'>
-<header>
-  <a href="/">Staff HQ</a>
-  <nav>
-    {% for key, label, href in [("overview", "Overview", "/"), ("work", "Work", "/work"), ("reports", "Reports", "/reports"),
-                                ("memory", "Memory", "/memory"), ("transcripts", "Transcripts", "/transcripts"),
-                                ("system", "System", "/system")] %}
-      {% if key != "transcripts" or is_owner %}
-      <a href="{{ href }}"{% if nav == key %} aria-current="page"{% endif %}>{{ label }}</a>
-      {% endif %}
-    {% endfor %}
-  </nav>
-  <span>{{ user.name }} · {{ user.role }} · <a href="/auth/logout">log out</a></span>
-</header>
-<main>
-{% block main %}{% endblock %}
-</main>
-<footer>node {{ site.node }} · work refreshed {{ site.refreshed | ago }}</footer>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Staff HQ{% endblock %} · Staff HQ</title><link rel="stylesheet" href="/static/site.css"><script src="/static/htmx.min.js" defer></script><script src="/static/shell.js" defer></script></head>
+<body hx-headers='{{ {"X-CSRF-Token": user.csrf} | tojson }}'>
+{% set links = [("overview","Overview","/"),("work","Work","/work"),("reports","Reports","/reports"),("memory","Memory","/memory"),("transcripts","Transcripts","/transcripts"),("system","System","/system")] %}
+{% macro navigation(label) %}<nav aria-label="{{ label }}">{% for key,label,href in links %}{% if key != 'transcripts' or is_owner %}<a href="{{ href }}"{% if nav == key %} aria-current="page"{% endif %}>{{ label }}</a>{% endif %}{% endfor %}</nav>{% endmacro %}
+<header><a class="brand" href="/"><span class="mark" aria-hidden="true">≋</span>Staff HQ</a>{{ navigation('Main') }}<div class="account">{{ user.name }} <span>{{ user.role | title }}</span><a href="/auth/logout">Log out</a></div><details class="mobile-menu"><summary>{{ 'Agent' if nav == 'agents' else nav | title }}</summary>{{ navigation('Mobile') }}<a class="mobile-logout" href="/auth/logout">Log out</a></details></header>
+<main id="main">{% block main %}{% endblock %}</main><footer><span>Node {{ site.node }} · Work refreshed {{ site.refreshed | ago }}</span><span>Agent status is view-only</span></footer></body></html>
