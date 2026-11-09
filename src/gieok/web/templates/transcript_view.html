@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Transcript{% endblock %}
 {% block main %}
-<h1>{{ transcript.source.rsplit("/", 1)[-1] }}</h1>
-<p>{{ transcript.agent }} · {{ transcript.host }} · {{ transcript.project }} · {{ transcript.harness }}
-  · {{ transcript.source_size }} B{% if transcript.redactions %} · {{ transcript.redactions }} redactions{% endif %}</p>
-<pre>{{ body }}</pre>
+<div class="page-head"><div>
+  <h1>{{ transcript.source.rsplit("/", 1)[-1] }}</h1>
+  <p class="muted">{{ transcript.agent }} · {{ transcript.host }} · {{ transcript.project }} · {{ transcript.harness }}</p>
+  <p class="meta">{{ transcript.source_size }} B · {{ transcript.redactions or 0 }} redactions</p>
+</div></div>
+<div class="transcript"><pre id="transcript-body">{{ body }}</pre></div>
 {% endblock %}

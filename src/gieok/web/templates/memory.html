@@ -1,12 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Memory{% endblock %}
 {% block main %}
-<h1>Memory</h1>
-<form action="/memory" hx-get="/memory" hx-target="#memory-results" hx-trigger="submit, input changed delay:400ms from:#q" hx-push-url="true">
-  <input id="q" name="q" type="search" value="{{ query }}" placeholder="Search memories">
-  <select name="ns"><option value="">all namespaces</option>{% for s in spaces %}<option value="{{ s }}"{% if s == ns %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+<div class="page-head"><div><h1>Memory</h1><p class="muted">Search shared knowledge or browse a namespace.</p></div></div>
+<form class="search" action="/memory" hx-get="/memory" hx-target="#memory-results" hx-trigger="submit, input changed delay:400ms from:#q, change from:select" hx-push-url="true">
+  <input id="q" aria-label="Search memories" name="q" type="search" value="{{ query }}" placeholder="Search memories">
+  <select name="ns" aria-label="Namespace"><option value="">All namespaces</option>
+    {% for s in spaces %}<option value="{{ s }}"{% if s == ns %} selected{% endif %}>{{ s }}</option>{% endfor %}
+  </select>
   <button>Search</button>
 </form>
-{% if not hybrid_ready %}<p>Keyword search only: the embedding model is not installed on this host.</p>{% endif %}
-<div id="memory-results">{% include "memory_results.html" %}</div>
+{% if not hybrid_ready %}<p class="notice">Keyword search only: the embedding model is not installed on this host.</p>{% endif %}
+<div id="memory-results" aria-live="polite">{% include "memory_results.html" %}</div>
 {% endblock %}

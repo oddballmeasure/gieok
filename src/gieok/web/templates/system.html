@@ -1,11 +1,39 @@
 {% extends "base.html" %}
 {% block title %}System{% endblock %}
 {% block main %}
-<h1>System</h1>
-<h2>Nodes</h2>
-<table><thead><tr><th>Node</th><th>Role</th><th>Sync lag</th></tr></thead>
-<tbody>{% for n in nodes %}<tr><td>{{ n.name }}</td><td>{{ n.role }}</td><td>{{ n.lag_s }} s</td></tr>{% endfor %}</tbody></table>
-<p>One node until sync lands (Gieok Phase 3).</p>
-<h2>Space</h2>
-<dl>{% for k, v in stats.items() %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+{% macro bytes(n) -%}
+  {% if n >= 1000000 %}{{ '%.2f' | format(n / 1000000) }} MB{% elif n >= 1000 %}{{ '%.1f' | format(n / 1000) }} KB{% else %}{{ n }} B{% endif %}
+{%- endmacro %}
+<div class="page-head"><div><h1>System</h1><p class="muted">Storage on {{ site.node }} · Current snapshot</p></div></div>
+<section><h2>Nodes and sync</h2>
+  <table class="data-table"><thead><tr><th>Node</th><th>Role</th><th>Sync lag</th></tr></thead>
+    <tbody>{% for n in nodes %}<tr><td>{{ n.name }} {% if n.here %}<span class="badge up">Here</span>{% endif %}</td><td>{{ n.role }}</td><td>{{ (n.lag_s ~ ' s') if n.lag_s is not none else 'Unknown' }}</td></tr>{% endfor %}</tbody>
+  </table>
+</section>
+<section><h2>Space</h2>
+  <div class="metrics">
+    {% for key, label in [('versions', 'Memory versions'), ('transcripts', 'Transcripts'), ('memories', 'Live memories')] %}
+      <div><strong>{{ stats[key] }}</strong><span>{{ label }}</span></div>
+    {% endfor %}
+  </div>
+  <div class="columns">
+    <section class="panel"><h2>Transcripts</h2><dl class="statlist">
+      {% for key, label in [('transcript_raw', 'Raw source'), ('unique_bytes', 'Unique chunk bytes'), ('packs_stored', 'Sealed packs stored'), ('staging', 'Staging')] %}
+        <div><dt>{{ label }}</dt><dd>{{ bytes(stats[key]) }}</dd></div>
+      {% endfor %}
+      <div><dt>Dedup ratio</dt><dd>{{ ('%.2f×' | format(stats.transcript_raw / stats.unique_bytes)) if stats.unique_bytes else '–' }}</dd></div>
+      <div><dt>Stored packs / raw source</dt><dd>{{ ('%.1f%%' | format(stats.packs_stored / stats.transcript_raw * 100)) if stats.transcript_raw else '–' }}</dd></div>
+      <div><dt>Unique chunks</dt><dd>{{ stats.unique_chunks }}</dd></div>
+      <div><dt>Sealed packs</dt><dd>{{ stats.packs_sealed }}</dd></div>
+    </dl><p class="note">Dedup compares raw transcript bytes with unique chunk bytes. Pack compression is separate.</p></section>
+    <section class="panel"><h2>Memory</h2><dl class="statlist">
+      {% for key, label in [('memory_raw', 'Raw version bytes'), ('memory_stored', 'Stored version bodies'), ('dict_bytes', 'Dictionary bytes'), ('db_bytes', 'Database + WAL / SHM')] %}
+        <div><dt>{{ label }}</dt><dd>{{ bytes(stats[key]) }}</dd></div>
+      {% endfor %}
+      <div><dt>Body reduction</dt><dd>{{ ('%.1f%%' | format((1 - stats.memory_stored / stats.memory_raw) * 100)) if stats.memory_raw else '–' }}</dd></div>
+      <div><dt>Dictionaries</dt><dd>{{ stats.dicts }}</dd></div>
+    </dl><p class="notice">Dictionary-only gains are unmeasured.</p>
+    <p class="note">Stored bodies combine compression and deltas and are already included in database bytes.</p></section>
+  </div>
+</section>
 {% endblock %}
