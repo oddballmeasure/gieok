@@ -146,6 +146,10 @@ def test_put_redacts_pii(store, home):
     assert "example.org" not in store.text(r["id"])
 
 
+def results(lines):
+    return [x for x in lines if x.get("phase") != "intent"]
+
+
 def test_audit_lines(store, home):
     g = gate(store, home)
     g.search("deploy", 5)
@@ -153,19 +157,54 @@ def test_audit_lines(store, home):
     with pytest.raises(Refused):
         g.get(store.get("agent/saekdong", "private-deploy").id)
     lines = audit(home)
-    assert [x["tool"] for x in lines] == ["search", "put", "get"]
+    assert [(x["tool"], x.get("phase")) for x in lines] == [("search", None), ("put", "intent"), ("put", None),
+                                                           ("get", None)]
     assert lines[0]["args"] == {"query": "deploy", "limit": 5, "namespace": None} and lines[0]["count"] >= 1
-    assert lines[1]["args"] == {"key": "k", "length": 11} and "content" not in json.dumps(lines[1])
-    assert "error" in lines[2] and all(x["agent"] == "jangin" and x["time"] for x in lines)
+    assert lines[1]["args"] == lines[2]["args"] == {"key": "k", "length": 11}
+    assert "content" not in json.dumps(lines[1:3]) and lines[2]["count"] == 1
+    assert "error" in lines[3] and all(x["agent"] == "jangin" and x["time"] for x in lines)
 
 
-def test_unknown_agent_refused(store, home):
+def test_put_intent_logged_before_the_write(store, home, monkeypatch):
+    g = gate(store, home)
+    def boom(*a, **kw):
+        raise OSError("disk full")
+    monkeypatch.setattr(store, "put", boom)
+    with pytest.raises(OSError):
+        g.put("k", "hello")
+    lines = audit(home)
+    assert [x.get("phase") for x in lines] == ["intent", None] and "disk full" in lines[1]["error"]
+
+
+def test_audit_clips_and_survives_bad_text(store, home):
+    g = gate(store, home)
+    g.search("x" * 100_000)
+    with pytest.raises(Refused, match="not valid Unicode"):
+        g.put("k", "a\ud800b")
+    try:
+        g.search("a\ud800b")  # SQLite may take it or refuse it; either way it is audited
+    except Exception:
+        pass
+    with pytest.raises(Refused):
+        g.get("y" * 100_000)
+    lines = audit(home)
+    assert len(lines) == 4 and all(len(json.dumps(x)) < 2000 for x in lines)
+    assert lines[0]["args"]["query"].endswith("[100000 chars]") and lines[1]["args"]["length"] == 3
+    assert store.get("agent/jangin", "k") is None
+
+
+def test_unknown_agent_refused_and_logged_apart(store, home):
     g = gate(store, home, "mallory")
     for call in (lambda: g.search("deploy"), lambda: g.list(""), lambda: g.put("x", "y"),
                  lambda: g.get(store.get("project/oscar", "NOTES").id)):
         with pytest.raises(Refused, match="no grant"):
             call()
-    assert len(audit(home, "mallory")) == 4 and store.get("agent/mallory", "x") is None
+    assert not (home / "audit" / "mallory.jsonl").exists() and store.get("agent/mallory", "x") is None
+    lines = audit(home, "_refused")
+    assert len(lines) == 4 and {x["agent"] for x in lines} == {"mallory"}
+    with pytest.raises(Refused):
+        gate(store, home, "../evil").search("x")
+    assert sorted(p.name for p in (home / "audit").iterdir()) == ["_refused.jsonl"]
 
 
 def test_bad_grants_file_refuses_all(store, home):
@@ -181,6 +220,65 @@ def test_bad_grants_file_refuses_all(store, home):
     (home / "grants.toml").write_text("[agents.someone]\nread = []\n")  # revoked: picked up without a restart
     with pytest.raises(Refused, match="no grant"):
         g.search("deploy")
+    assert [x.get("error", "")[:8] for x in audit(home, "_refused")] == ["grants.t", "grants.t", "agent 'j"]
+
+
+@pytest.mark.parametrize("name,content,kind", [
+    ("zero-width", "sk-ant-abcdefghij\u200bklmnopqrstuvwxyz0123", "anthropic-key"),
+    ("fullwidth", "\uff53\uff4b-ant-abcdefghijklmnopqrstuvwxyz0123", "anthropic-key"),
+    ("inner-space", "sk-ant-abcdefghij klmnopqrstuvwxyz0123", "anthropic-key"),
+    ("split-github", "ghp_a1B2c3D4e5F6g7H8 i9J0k1L2m3N4o5P6q7R8", "github-token"),
+    ("soft-hyphen", "ghp_a1B2c3D4e5F6g7H8\u00adi9J0k1L2m3N4o5P6q7R8", "github-token"),
+])
+def test_put_refuses_disguised_secrets(store, home, name, content, kind):
+    with pytest.raises(Refused, match=kind):
+        gate(store, home).put(name, f"note: {content} end")
+    assert store.get("agent/jangin", name) is None
+
+
+def test_put_keeps_ordinary_prose(store, home):
+    g = gate(store, home)
+    for i, text in enumerate(["sk-learn is a library for machine learning in python",
+                              "ghp_ tokens are 40 characters long", "password: see the vault for it"]):
+        assert g.put(f"prose-{i}", text)["path"] == f"agent/jangin/prose-{i}"
+
+
+def test_put_never_revives_a_forgotten_key(store, home):
+    g = gate(store, home)
+    g.put("old", "first")
+    store.forget("agent/jangin", "old", author="monty")
+    with pytest.raises(Refused, match="this key was forgotten; use a new key"):
+        g.put("old", "again")
+    assert store.get("agent/jangin", "old").deleted
+    assert g.put("old-2", "again")["path"] == "agent/jangin/old-2"
+
+
+def test_forgotten_check_holds_inside_the_store(store):
+    from gieok.store import Forgotten
+    store.put("agent/jangin", "k", "a", author="x")
+    store.forget("agent/jangin", "k", author="monty")
+    with pytest.raises(Forgotten):
+        store.put("agent/jangin", "k", "b", author="x", revive=False)
+    assert store.get("agent/jangin", "k").deleted
+
+
+def test_transcript_ids_ascii_digits_only(store, home):
+    g = gate(store, home, "overseer")
+    for bad in ("transcript:\u00b2", "transcript:\u0661", "transcript:-1", "transcript:"):
+        with pytest.raises(Refused, match="no transcript"):
+            g.get(bad)
+    assert g.get("transcript:1")["path"] == "transcripts/oscar/s1"
+
+
+def test_search_ranks_only_allowed_docs(store, home):
+    g = gate(store, home)
+    before = [h["path"] for h in g.search("deploy merge green", limit=50)]
+    assert all("score" not in h for h in g.search("deploy"))
+    for i in range(200):  # denied documents that would crowd any pool
+        store.put("agent/saekdong", f"flood-{i}", "deploy merge green " * 5, author="ingest")
+    after = [h["path"] for h in g.search("deploy merge green", limit=50)]
+    assert set(after) == set(before) and all(allowed(p) for p in after)
+    assert g.search("deploy", namespace="agent/saekdong") == []
 
 
 def test_mcp_round_trip(store, home):
@@ -200,11 +298,27 @@ def test_mcp_round_trip(store, home):
             secret = await client.call_tool("put", {"key": "s", "content": GH})
             assert secret.isError and GH not in secret.content[0].text
     anyio.run(main)
-    assert [x["tool"] for x in audit(home)] == ["put", "search", "get", "get", "put"]
+    assert [x["tool"] for x in results(audit(home))] == ["put", "search", "get", "get", "put"]
 
 
-def test_cli_refuses_unknown_agent(store, home, capsys):
+def test_mcp_audits_rejected_calls(store, home):
+    async def main():
+        async with create_connected_server_and_client_session(build_server(gate(store, home))) as client:
+            for name, args in [("put", {"key": "x", "content": ["SENTINEL-" + GH]}), ("put", {"key": "x"}),
+                               ("nope", {"a": 1}),
+                               ("get", {"id": ["a"]}), ("search", {"query": "deploy", "limit": "lots"})]:
+                assert (await client.call_tool(name, args)).isError
+    anyio.run(main)
+    lines = audit(home)
+    assert [x["tool"] for x in lines] == ["put", "put", "nope", "get", "search"]
+    assert all("error" in x for x in lines) and "SENTINEL" not in json.dumps(lines) and GH not in json.dumps(lines)
+    assert lines[0]["args"] == {"key": "x", "length": None}
+
+
+def test_cli_refuses_unknown_agent_and_pins_node(store, home, capsys):
+    import socket
     from gieok import cli
-    assert cli.main(["--home", str(home), "--node", "test-node", "mcp", "--agent", "mallory"]) == 2
+    assert cli.main(["--home", str(home), "--node", "spoofed", "mcp", "--agent", "mallory"]) == 2
     assert "no grant" in capsys.readouterr().err
-    assert audit(home, "mallory")[-1]["tool"] == "start"
+    line = audit(home, "_refused")[-1]
+    assert line["tool"] == "start" and line["node"] == socket.gethostname() != "spoofed"

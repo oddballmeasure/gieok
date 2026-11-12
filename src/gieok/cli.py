@@ -87,7 +87,7 @@ def cmd_mcp(store: Store, args) -> int:
     try:
         gate.access.grant()
     except Refused as exc:
-        gate._audit("start", {"search": args.search}, error=str(exc))
+        gate.audit("start", {"search": args.search}, error=str(exc))
         print(f"gieok mcp: refused: {exc}", file=sys.stderr)
         return 2
     build_server(gate).run("stdio")
@@ -218,6 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("embed", help="embed memories that have no vector yet (loads the model, ~750 MB)")
     sub.add_parser("seal", help="compress the open pack now")
     args = p.parse_args(argv)
+    if args.cmd == "mcp":  # an agent's provenance records the real host, never a node name it was handed
+        args.node = socket.gethostname()
     store = Store(args.home, args.node)
     if args.cmd == "seal":
         print(store.seal(force=True) or "nothing to seal")

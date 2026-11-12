@@ -3,8 +3,8 @@
 Vector recall is two-stage: Hamming distance on the 1-bit vectors picks candidates, int8 dot products
 rescore them. Without an embedder (or before any memory is embedded) search is keyword-only."""
 
+import json
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -30,20 +30,22 @@ def fts_query(text: str, any_word: bool = False) -> str | None:
     return (" OR " if any_word else " ").join(f'"{w}"' for w in words)
 
 
-def _fts(store: Store, query: str, limit: int) -> list[int]:
+def _fts(store: Store, query: str, limit: int, allowed: set[int] | None = None) -> list[int]:
+    only = "" if allowed is None else " AND rowid IN (SELECT value FROM json_each(?))"
+    extra = () if allowed is None else (json.dumps(sorted(allowed)),)
     for any_word in (False, True):  # all words first; any word if that finds nothing
         q = fts_query(query, any_word)
         if q is None:
             return []
-        rows = store.db.execute("SELECT rowid FROM memory_fts WHERE memory_fts MATCH ? ORDER BY rank LIMIT ?",
-                                (q, limit)).fetchall()
+        rows = store.db.execute(f"SELECT rowid FROM memory_fts WHERE memory_fts MATCH ?{only} ORDER BY rank LIMIT ?",
+                                (q, *extra, limit)).fetchall()
         if rows:
             return [r[0] for r in rows]
     return []
 
 
-def _vec(store: Store, qvec: np.ndarray, limit: int, candidates: int = 200) -> list[int]:
-    rows = store.db.execute("SELECT rid, bits, q8 FROM vec").fetchall()
+def _vec(store: Store, qvec: np.ndarray, limit: int, candidates: int = 200, allowed: set[int] | None = None) -> list[int]:
+    rows = [r for r in store.db.execute("SELECT rid, bits, q8 FROM vec") if allowed is None or r[0] in allowed]
     if not rows:
         return []
     rids = np.array([r[0] for r in rows])
@@ -66,11 +68,11 @@ def _snippet(text: str, query: str, width: int = 160) -> str:
 
 
 def search(store: Store, query: str, k: int = 10, ns_prefix: str = "", embedder=None,
-           allow: Callable[[Memory], bool] | None = None, pool: int = 50) -> list[Hit]:
-    """`allow` filters before a hit is counted or its text read (grants). Pass a bigger `pool` with it, so
-    filtered-out candidates don't starve the result."""
-    fts = _fts(store, query, pool)
-    vec = _vec(store, embedder([query])[0], pool) if embedder is not None else []
+           allowed: set[int] | None = None, pool: int = 50) -> list[Hit]:
+    """`allowed` (memory rids, from a grant) restricts candidates before ranking, so the ranks, the pool cutoff
+    and the fused order only ever see allowed memories."""
+    fts = _fts(store, query, pool, allowed)
+    vec = _vec(store, embedder([query])[0], pool, allowed=allowed) if embedder is not None else []
     scores: dict[int, float] = {}
     via: dict[int, set] = {}
     for name, ranked in (("fts", fts), ("vec", vec)):
@@ -80,7 +82,7 @@ def search(store: Store, query: str, k: int = 10, ns_prefix: str = "", embedder=
     hits = []
     for rid in sorted(scores, key=scores.get, reverse=True):
         mem = store.by_rid(rid)
-        if mem is None or mem.deleted or not mem.ns.startswith(ns_prefix) or (allow is not None and not allow(mem)):
+        if mem is None or mem.deleted or not mem.ns.startswith(ns_prefix) or (allowed is not None and rid not in allowed):
             continue
         hits.append(Hit(mem, scores[rid], _snippet(store.text(mem.id), query), "+".join(sorted(via[rid]))))
         if len(hits) == k:
