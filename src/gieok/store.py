@@ -154,13 +154,22 @@ class Store:
         return self.root / "packs" / f"{pack}.staging"
 
     def _recover_staging(self) -> None:
-        """After a crash, cut the staging file back to what the database knows about."""
-        path = self._staging(self._open_pack)
-        known = self.db.execute("SELECT COALESCE(MAX(off + len), 0) FROM chunk WHERE pack=?",
-                                (self._open_pack,)).fetchone()[0]
-        if path.exists() and path.stat().st_size > known:
-            with path.open("r+b") as f:
-                f.truncate(known)
+        """After a crash, cut the staging file back to what the database knows about.
+
+        Under the write lock: another process (an ingest) appends to staging only inside its own write
+        transaction, so once we hold the lock, bytes past the known end really are crash leftovers."""
+        with self._lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                self._open_pack = self._meta("open_pack") or self._open_pack
+                path = self._staging(self._open_pack)
+                known = self.db.execute("SELECT COALESCE(MAX(off + len), 0) FROM chunk WHERE pack=?",
+                                        (self._open_pack,)).fetchone()[0]
+                if path.exists() and path.stat().st_size > known:
+                    with path.open("r+b") as f:
+                        f.truncate(known)
+            finally:
+                self.db.execute("COMMIT")
 
     def _put_chunk(self, db, f, digest: bytes, data: bytes) -> int:
         """Store a chunk once, appending to the open staging file `f`. Returns the bytes newly written."""
