@@ -67,10 +67,54 @@ def _clip(value):
     return _clip(repr(value))
 
 
-def normalize(text: str) -> str:
-    """NFKC, minus format characters (zero-width and the like), so look-alike or split keys can't hide.
+def normalize_map(text: str) -> tuple[str, list[int] | None]:
+    """(scan text, origin): each character NFKC-normalized, format characters (zero-width and the like)
+    dropped, so look-alike or split keys can't hide. origin[j] is the index in `text` that scan character j
+    came from (None when nothing changed). Expansions longer than 3 characters (like U+FDFA) are kept as
+    they were: they can't spell an ASCII key, and keeping them bounds the scan text.
     For scanning only: it changes Korean jamo, ①, ligatures and ZWJ, so it is never stored."""
-    return "".join(ch for ch in unicodedata.normalize("NFKC", text) if unicodedata.category(ch) != "Cf")
+    if text.isascii():
+        return text, None
+    out, origin = [], []
+    for i, ch in enumerate(text):
+        if ch.isascii():
+            out.append(ch)
+            origin.append(i)
+            continue
+        n = unicodedata.normalize("NFKC", ch)
+        for c in (ch if len(n) > 3 else n):
+            if unicodedata.category(c) != "Cf":
+                out.append(c)
+                origin.append(i)
+    return "".join(out), origin
+
+
+def normalize(text: str) -> str:
+    return normalize_map(text)[0]
+
+
+def pii_spans(text: str) -> list[tuple[int, int]]:
+    """Where the scrubber's PII patterns match in text (the spans it would redact)."""
+    spans = [m.span(2) for m in scrub.PII_FIELD.finditer(text) if m.group(2) != scrub.REDACTED]
+    for pattern in (scrub.EMAIL, scrub.STRIPE_CUSTOMER, scrub.IPV4, scrub.PHONE):
+        spans += [m.span() for m in pattern.finditer(text)]
+    for m in scrub.CARD.finditer(text):
+        digits = re.sub(r"\D", "", m.group(0))
+        if scrub._luhn(digits) and len(set(digits)) > 1:
+            spans.append(m.span())
+    return spans
+
+
+def uncovered_pii(original: str, scanned: str, origin: list[int]) -> bool:
+    """True if some PII the normalized scan finds is not wholly inside what redacting the original removes:
+    "jo\\u200bhn.smith@example.com" redacts only "hn.smith@…" in the original and would leave "jo" behind."""
+    covered = bytearray(len(original))
+    for s, e in pii_spans(original):
+        covered[s:e] = b"\x01" * (e - s)
+    for s, e in pii_spans(scanned):
+        if e > s and not all(covered[origin[s]: origin[e - 1] + 1]):
+            return True
+    return False
 
 
 def split_keys(text: str) -> list[str]:
@@ -273,7 +317,11 @@ class Gate:
             if size > PUT_MAX:
                 raise Refused(f"content is {size} bytes; the limit is {PUT_MAX}")
             # Scan the normalized text, store the original: NFKC would corrupt Korean jamo, ①, ligatures, ZWJ.
-            scanned = normalize(content)
+            key_kinds = secret_kinds(key) | secret_kinds(re.sub(r"[/.]", "", key))
+            if key_kinds:  # the key is stored and audited too: it must not carry a credential either
+                raise Refused(f"refused: the key holds credentials ({', '.join(sorted(key_kinds))}); "
+                              "nothing was stored")
+            scanned, origin = normalize_map(content)
             kinds, seen = scan(scanned, self.known_secrets)
             r = seen  # when normalizing changed nothing, the scan result is the original's
             if scanned != content:
@@ -283,8 +331,9 @@ class Gate:
                 listed = ", ".join(f"{k} x{n}" for k, n in sorted(kinds.items()))
                 raise Refused(f"refused: the content holds credentials ({listed}). Remove them and put again; "
                               "nothing was stored")
-            # r: the original, with PII as [redacted]. PII visible only after normalizing would be stored in clear.
-            if scanned != content and sum(seen.pii.values()) > sum(r.pii.values()):
+            # r: the original, with PII as [redacted]. PII the normalized scan finds must be wholly inside the
+            # original's redacted spans, or some of it would be stored in clear.
+            if scanned != content and uncovered_pii(content, scanned, origin):
                 raise Refused("refused: the content holds personal data written with look-alike or invisible "
                               "characters. Write it plainly (it will be redacted) or leave it out; nothing was stored")
             ns = f"agent/{self.agent}"

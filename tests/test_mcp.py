@@ -334,6 +334,13 @@ ADVERSARIAL = {
     "one-long-piece": "sk-" + "a1" * 16000,
     "wide-gap": "sk-1" + " " * 32000 + "a",
     "max-pieces": ("ghp_a1 " + "b2 " * 8) * 1500,
+    "phone-like": "1-" * 16000,
+    "ip-like": "1." * 16000,
+    "pem-begins": "-----BEGIN PRIVATE KEY-----\n" * 1200,
+    "wide-unicode": "\ufdfa" * 10000,
+    "zero-width": "\u200b" * 10000,
+    "fullwidth-prefixes": "\uff53\uff4b-" * 3500,
+    "zwsp-emails": "a\u200bb@example.com " * 1600,
 }
 
 
@@ -398,3 +405,24 @@ def test_mcp_rejection_messages_hold_no_input(store, home):
                                            "ValidationError: invalid arguments (id)"]
     assert lines[1]["args"] == {"key": "m4", "length": None, "unknown_args": 1}
     assert lines[2]["args"] == {"key": "dict", "length": 2}
+
+
+def test_put_refuses_a_credential_in_the_key(store, home):
+    g = gate(store, home)
+    for key in (GH, f"notes/{GH}", f"{GH[:20]}/{GH[20:]}", f"{GH[:20]}.{GH[20:]}"):
+        with pytest.raises(Refused, match="key holds credentials"):
+            g.put(key, "x")
+    assert store.memories("agent/jangin") == [] and GH not in (home / "audit" / "jangin.jsonl").read_text()
+
+
+@pytest.mark.parametrize("text", ["jo​hn.smith@example.com", "mail john.smith@exam​ple.com now",
+                                  "card 4111​ 1111 1111 1111", "ip 10.1​.2.3"])
+def test_put_refuses_pii_the_original_redaction_would_split(store, home, text):
+    with pytest.raises(Refused, match="personal data"):
+        gate(store, home).put("frag", text)
+    assert store.get("agent/jangin", "frag") is None
+
+
+def test_put_keeps_unicode_next_to_plain_pii(store, home):
+    r = gate(store, home).put("ok", "​ㅋㅋ jane.doe@example.org ① 👩‍💻")
+    assert store.text(r["id"]) == "​ㅋㅋ [redacted] ① 👩‍💻"
