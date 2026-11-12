@@ -72,6 +72,28 @@ def cmd_ingest(store: Store, args) -> int:
     return 0
 
 
+def cmd_refresh(store: Store, args) -> int:
+    """Re-ingest memories and NOTES.md (not transcripts). The hourly timer runs this."""
+    args.memory, args.notes, args.claude, args.codex, args.limit, args.seal = True, True, False, False, None, False
+    return cmd_ingest(store, args)
+
+
+def cmd_mcp(store: Store, args) -> int:
+    from gieok.grants import Refused
+    from gieok.mcpserver import Gate, build_server
+    from gieok import scrub
+    gate = Gate(store, args.agent, args.home, search=args.search,
+                known_secrets=scrub.known_values(settings_files(Path.home())))
+    try:
+        gate.access.grant()
+    except Refused as exc:
+        gate._audit("start", {"search": args.search}, error=str(exc))
+        print(f"gieok mcp: refused: {exc}", file=sys.stderr)
+        return 2
+    build_server(gate).run("stdio")
+    return 0
+
+
 def cmd_stats(store: Store, args) -> int:
     s = store.stats()
     if args.json:
@@ -187,6 +209,11 @@ def main(argv: list[str] | None = None) -> int:
     w.add_argument("--title")
     w.add_argument("--reason")
     sub.add_parser("verify")
+    sub.add_parser("refresh", help="re-ingest memories and NOTES.md, not transcripts (hourly timer)")
+    m = sub.add_parser("mcp", help="stdio MCP server for one agent, limited by grants.toml")
+    m.add_argument("--agent", required=True)
+    m.add_argument("--search", choices=("fts", "hybrid"), default="fts",
+                   help="hybrid loads the ~750 MB embedding model once per process; fts (default) never does")
     sub.add_parser("migrate", help="move Phase 1 rows into the Phase 2 namespaces (idempotent)")
     sub.add_parser("embed", help="embed memories that have no vector yet (loads the model, ~750 MB)")
     sub.add_parser("seal", help="compress the open pack now")
@@ -196,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
         print(store.seal(force=True) or "nothing to seal")
         return 0
     return {"ingest": cmd_ingest, "stats": cmd_stats, "search": cmd_search, "get": cmd_get, "put": cmd_put,
-            "verify": cmd_verify, "embed": cmd_embed, "migrate": cmd_migrate}[args.cmd](store, args)
+            "verify": cmd_verify, "embed": cmd_embed, "migrate": cmd_migrate, "refresh": cmd_refresh, "mcp": cmd_mcp}[args.cmd](store, args)
 
 
 if __name__ == "__main__":

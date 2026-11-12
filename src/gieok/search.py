@@ -4,6 +4,7 @@ Vector recall is two-stage: Hamming distance on the 1-bit vectors picks candidat
 rescore them. Without an embedder (or before any memory is embedded) search is keyword-only."""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -64,9 +65,12 @@ def _snippet(text: str, query: str, width: int = 160) -> str:
     return ("…" if start else "") + " ".join(text[start: start + width].split()) + ("…" if start + width < len(text) else "")
 
 
-def search(store: Store, query: str, k: int = 10, ns_prefix: str = "", embedder=None) -> list[Hit]:
-    fts = _fts(store, query, 50)
-    vec = _vec(store, embedder([query])[0], 50) if embedder is not None else []
+def search(store: Store, query: str, k: int = 10, ns_prefix: str = "", embedder=None,
+           allow: Callable[[Memory], bool] | None = None, pool: int = 50) -> list[Hit]:
+    """`allow` filters before a hit is counted or its text read (grants). Pass a bigger `pool` with it, so
+    filtered-out candidates don't starve the result."""
+    fts = _fts(store, query, pool)
+    vec = _vec(store, embedder([query])[0], pool) if embedder is not None else []
     scores: dict[int, float] = {}
     via: dict[int, set] = {}
     for name, ranked in (("fts", fts), ("vec", vec)):
@@ -76,7 +80,7 @@ def search(store: Store, query: str, k: int = 10, ns_prefix: str = "", embedder=
     hits = []
     for rid in sorted(scores, key=scores.get, reverse=True):
         mem = store.by_rid(rid)
-        if mem is None or mem.deleted or not mem.ns.startswith(ns_prefix):
+        if mem is None or mem.deleted or not mem.ns.startswith(ns_prefix) or (allow is not None and not allow(mem)):
             continue
         hits.append(Hit(mem, scores[rid], _snippet(store.text(mem.id), query), "+".join(sorted(via[rid]))))
         if len(hits) == k:
@@ -84,14 +88,19 @@ def search(store: Store, query: str, k: int = 10, ns_prefix: str = "", embedder=
     return hits
 
 
-def search_transcripts(store: Store, query: str, k: int = 10) -> list[dict]:
+def _like(prefix: str) -> str:
+    return prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def search_transcripts(store: Store, query: str, k: int = 10, ns_prefix: str = "") -> list[dict]:
     for any_word in (False, True):
         q = fts_query(query, any_word)
         if q is None:
             return []
         rows = store.db.execute(
-            "SELECT t.rid, t.source, t.agent, t.host, t.project, t.started, t.ended FROM transcript_fts f "
-            "JOIN transcript t ON t.rid=f.rowid WHERE transcript_fts MATCH ? ORDER BY rank LIMIT ?", (q, k)).fetchall()
+            "SELECT t.rid, t.source, t.agent, t.host, t.project, t.ns, t.started, t.ended FROM transcript_fts f "
+            "JOIN transcript t ON t.rid=f.rowid WHERE transcript_fts MATCH ? AND t.ns LIKE ? ESCAPE '\\' "
+            "ORDER BY rank LIMIT ?", (q, _like(ns_prefix), k)).fetchall()
         if rows:
             return [dict(r) for r in rows]
     return []
