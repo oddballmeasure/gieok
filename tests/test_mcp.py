@@ -322,3 +322,79 @@ def test_cli_refuses_unknown_agent_and_pins_node(store, home, capsys):
     assert "no grant" in capsys.readouterr().err
     line = audit(home, "_refused")[-1]
     assert line["tool"] == "start" and line["node"] == socket.gethostname() != "spoofed"
+
+
+ADVERSARIAL = {
+    "prefix-run": "sk-" * 11000,
+    "prefix-then-pieces": "sk-" + "a " * 17000,
+    "prefix-space-digit": "sk- 1" * 7000,
+    "newline-pieces": "sk-a1\n" * 6000,
+    "github-pieces": "ghp_1 " * 6000,
+    "mixed-whitespace": "sk-ant-1 \n\t" * 4000,
+    "one-long-piece": "sk-" + "a1" * 16000,
+    "wide-gap": "sk-1" + " " * 32000 + "a",
+    "max-pieces": ("ghp_a1 " + "b2 " * 8) * 1500,
+}
+
+
+@pytest.mark.parametrize("name", sorted(ADVERSARIAL))
+def test_put_scan_is_linear(store, home, name):
+    import time
+    g = gate(store, home)
+    content = ADVERSARIAL[name][:32 * 1024]
+    t = time.perf_counter()
+    try:
+        g.put(f"dos-{name}", content)
+    except Refused:
+        pass
+    assert time.perf_counter() - t < 0.2
+
+
+@pytest.mark.parametrize("sep", ["\n", "\r\n", "\t", " \n  ", " "])
+def test_put_refuses_keys_split_by_any_whitespace(store, home, sep):
+    with pytest.raises(Refused, match="anthropic-key"):
+        gate(store, home).put("split", f"key: sk-ant-abcdefghij{sep}klmnopqrstuvwxyz0123 ok")
+
+
+def test_put_stores_the_original_text(store, home):
+    g = gate(store, home)
+    text = "ㅋㅋ 한국어 ① ﬁ Ａ 👩‍💻 café"
+    r = g.put("unicode", text)
+    assert store.text(r["id"]) == text and g.get(r["id"])["text"] == text
+    r2 = g.put("unicode-pii", "ㅋㅋ mail jane.doe@example.org ①")
+    assert store.text(r2["id"]) == "ㅋㅋ mail [redacted] ①"
+
+
+def test_put_refuses_disguised_pii(store, home):
+    with pytest.raises(Refused, match="personal data"):
+        gate(store, home).put("pii", "mail ｊａｎｅ@ｅｘａｍｐｌｅ.org")
+    assert store.get("agent/jangin", "pii") is None
+
+
+def test_audit_scrubs_logged_strings(store, home):
+    g = gate(store, home)
+    g.search(f"find {GH} please")
+    with pytest.raises(Refused):
+        g.get(f"id-{GH}")
+    text = (home / "audit" / "jangin.jsonl").read_text()
+    assert GH not in text and "[secret:github-token]" in text
+
+
+def test_mcp_rejection_messages_hold_no_input(store, home):
+    async def main():
+        async with create_connected_server_and_client_session(build_server(gate(store, home))) as client:
+            for name, args in [("put", {"key": "m2", "content": {"a": f"x, input_type=zz {GH}"}}),
+                               ("put", {"key": "m4", "content": 5, GH: 1}),
+                               ("put", {"key": {"x": GH}, "content": "ok"}),
+                               ("get", {"id": 5})]:
+                assert (await client.call_tool(name, args)).isError
+    anyio.run(main)
+    lines = audit(home)
+    blob = json.dumps(lines)
+    assert GH not in blob and "R8" not in blob and "input_value" not in blob
+    assert [x["error"] for x in lines] == ["ValidationError: invalid arguments (content)",
+                                           "ValidationError: invalid arguments (content)",
+                                           "ValidationError: invalid arguments (key)",
+                                           "ValidationError: invalid arguments (id)"]
+    assert lines[1]["args"] == {"key": "m4", "length": None, "unknown_args": 1}
+    assert lines[2]["args"] == {"key": "dict", "length": 2}

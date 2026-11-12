@@ -40,11 +40,13 @@ CLIP = 500  # characters of any string the audit log keeps
 KEY = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*\Z")
 TID = "transcript:"
 REFUSED_LOG = "_refused"
-# A known token prefix followed by pieces split by spaces: "sk-ant-abc def…" is still a key.
-SPLIT_KEY = re.compile(r"(?<![A-Za-z0-9])(?:sk-|gh[pousr]_|github_pat_|xox[abprs]-|AKIA|ASIA|sntry[su]_|[sr]k_(?:live|test)_)"
-                       r"[A-Za-z0-9_-]*(?:[ \t ]+[A-Za-z0-9_-]+){1,8}")
-
-INPUT_VALUE = re.compile(r"input_value=.*?, input_type=", re.S)
+# Known token prefixes. A key split by whitespace ("sk-ant-abc def…", or across lines) is still a key.
+# The prefix regex has no quantifiers and every later step is bounded, so the scan stays linear (split_keys).
+KEY_PREFIX = re.compile(r"(?<![A-Za-z0-9])(?:sk-|gh[pousr]_|github_pat_|xox[abprs]-|AKIA|ASIA|sntry[su]_|[sr]k_(?:live|test)_)")
+PIECE = re.compile(r"[A-Za-z0-9_-]{1,256}")
+GAP = re.compile(r"\s{1,16}")
+MAX_PIECES = 9
+FIELDS = {"key", "content", "id", "query", "limit", "namespace", "namespace_prefix"}
 _audited: contextvars.ContextVar[bool] = contextvars.ContextVar("gieok_audited", default=False)
 
 
@@ -53,10 +55,11 @@ def _iso(seconds: float) -> str:
 
 
 def _clip(value):
-    if isinstance(value, str):
-        return value if len(value) <= CLIP else value[:CLIP] + f"…[{len(value)} chars]"
+    if isinstance(value, str):  # scrubbed too: a credential in a query or an id never reaches the audit log
+        short = value if len(value) <= CLIP else value[:CLIP] + f"…[{len(value)} chars]"
+        return scrub.scrub(short).text
     if isinstance(value, dict):
-        return {str(k)[:CLIP]: _clip(v) for k, v in list(value.items())[:20]}
+        return {_clip(str(k)): _clip(v) for k, v in list(value.items())[:20]}
     if isinstance(value, (list, tuple)):
         return [_clip(v) for v in value[:20]]
     if value is None or isinstance(value, (bool, float)) or (isinstance(value, int) and abs(value) < 10**18):
@@ -65,18 +68,43 @@ def _clip(value):
 
 
 def normalize(text: str) -> str:
-    """NFKC, minus format characters (zero-width and the like), so look-alike or split keys can't hide."""
+    """NFKC, minus format characters (zero-width and the like), so look-alike or split keys can't hide.
+    For scanning only: it changes Korean jamo, ①, ligatures and ZWJ, so it is never stored."""
     return "".join(ch for ch in unicodedata.normalize("NFKC", text) if unicodedata.category(ch) != "Cf")
 
 
+def split_keys(text: str) -> list[str]:
+    """Candidates rejoined from a key prefix plus up to 8 more pieces separated by any whitespace. Linear:
+    each step is bounded, and the scan resumes after the span it just read."""
+    out, pos = [], 0
+    while (m := KEY_PREFIX.search(text, pos)) is not None:
+        end = m.end()
+        first = PIECE.match(text, end)
+        end = first.end() if first else end
+        pieces = [text[m.start():end]]
+        while len(pieces) < MAX_PIECES and (gap := GAP.match(text, end)) and (piece := PIECE.match(text, gap.end())):
+            pieces.append(piece.group(0))
+            end = piece.end()
+        if len(pieces) > 1:
+            joined = "".join(pieces)
+            if any(ch.isdigit() for ch in joined):  # real keys carry digits; "sk-learn is a library" doesn't
+                out.append(joined)
+        pos = max(end, m.start() + 1)
+    return out
+
+
+def scan(text: str, known: list[str] = ()) -> tuple[Counter, scrub.Result]:
+    """(credential kinds, the scrub result) for text, counting keys broken up by whitespace too."""
+    result = scrub.scrub(text, known)
+    kinds = Counter(result.secrets)
+    joined = split_keys(text)
+    if joined:  # one scrub pass over every candidate; pieces hold no whitespace, so lines can't merge
+        kinds.update(scrub.scrub("\n".join(joined)).secrets)
+    return kinds, result
+
+
 def secret_kinds(text: str, known: list[str] = ()) -> Counter:
-    """Credential kinds in already-normalized text, including keys broken up by whitespace."""
-    kinds = Counter(scrub.scrub(text, known).secrets)
-    for m in SPLIT_KEY.finditer(text):
-        joined = re.sub(r"\s+", "", m.group(0))
-        if re.search(r"\d", joined):  # real keys carry digits; "sk-learn is a library" doesn't
-            kinds.update(scrub.scrub(joined).secrets)
-    return kinds
+    return scan(text, known)[0]
 
 
 class Gate:
@@ -244,13 +272,21 @@ class Gate:
                 raise Refused(f"no write grant for {path}")
             if size > PUT_MAX:
                 raise Refused(f"content is {size} bytes; the limit is {PUT_MAX}")
-            text = normalize(content)
-            kinds = secret_kinds(text, self.known_secrets)
+            # Scan the normalized text, store the original: NFKC would corrupt Korean jamo, ①, ligatures, ZWJ.
+            scanned = normalize(content)
+            kinds, seen = scan(scanned, self.known_secrets)
+            r = seen  # when normalizing changed nothing, the scan result is the original's
+            if scanned != content:
+                more, r = scan(content, self.known_secrets)
+                kinds |= more
             if kinds:
                 listed = ", ".join(f"{k} x{n}" for k, n in sorted(kinds.items()))
                 raise Refused(f"refused: the content holds credentials ({listed}). Remove them and put again; "
                               "nothing was stored")
-            r = scrub.scrub(text, self.known_secrets)  # PII becomes [redacted]
+            # r: the original, with PII as [redacted]. PII visible only after normalizing would be stored in clear.
+            if scanned != content and sum(seen.pii.values()) > sum(r.pii.values()):
+                raise Refused("refused: the content holds personal data written with look-alike or invisible "
+                              "characters. Write it plainly (it will be redacted) or leave it out; nothing was stored")
             ns = f"agent/{self.agent}"
             before = self.store.get(ns, key)
             if before is not None and before.deleted:
@@ -269,6 +305,26 @@ class Gate:
         return self._run("put", {"key": key, "length": None}, run)
 
 
+def rejection(exc: Exception) -> str:
+    """A fixed message for a call the SDK refused: the error type and the field names only. Never the
+    message text, which quotes the rejected input."""
+    cause, depth = exc, 0
+    while cause is not None and not callable(getattr(cause, "errors", None)) and depth < 10:
+        cause, depth = cause.__cause__ or cause.__context__, depth + 1
+    if cause is not None and not callable(getattr(cause, "errors", None)):
+        cause = None
+    if cause is None:
+        return f"{type(exc).__name__}: call rejected before the tool ran"
+    fields = set()
+    try:
+        for err in cause.errors():
+            loc = err.get("loc") or ("?",)
+            fields.add(str(loc[0]) if str(loc[0]) in FIELDS else "?")
+    except Exception:
+        fields.add("?")
+    return f"{type(cause).__name__}: invalid arguments ({', '.join(sorted(fields)) or '?'})"
+
+
 class GieokMCP(FastMCP):
     """Audits calls FastMCP fails before any tool body runs: argument validation and unknown tools."""
 
@@ -282,15 +338,16 @@ class GieokMCP(FastMCP):
             return await super().call_tool(name, arguments)
         except Exception as exc:
             if not _audited.get():
-                args = dict(arguments or {})
-                if "content" in args:  # never log put content
-                    c = args.pop("content")
-                    args["length"] = len(c) if isinstance(c, str) else None
-                if name == "put" and not isinstance(args.get("key"), (str, type(None))):
-                    args["key"] = type(args["key"]).__name__
-                # pydantic quotes the rejected value (input_value=...): it may be put content, so hide it
-                msg = INPUT_VALUE.sub("input_value=<hidden>, input_type=", str(exc))
-                self.gate.audit(name, args, error=f"{type(exc).__name__}: {msg}")
+                raw = arguments if isinstance(arguments, dict) else {}
+                # Known argument names only, simple values only: other names and nested values are caller text
+                args = {k: (v if isinstance(v, (str, int, float, bool, type(None))) else type(v).__name__)
+                        for k, v in raw.items() if k in FIELDS and k != "content"}
+                if "content" in raw:  # never log put content
+                    args["length"] = len(raw["content"]) if isinstance(raw["content"], str) else None
+                extra = sum(1 for k in raw if k not in FIELDS)
+                if extra:
+                    args["unknown_args"] = extra
+                self.gate.audit(name, args, error=rejection(exc))
             raise
         finally:
             _audited.reset(token)
