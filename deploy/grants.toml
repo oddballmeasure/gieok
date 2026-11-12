@@ -1,0 +1,11 @@
+# Gieok grants. Install to ~/.local/share/gieok/grants.toml, owned by monty, mode 0644 or 0600 (never group- or
+# world-writable, or every agent is refused). Only Monty edits it; no MCP tool can write it. Changes apply on the
+# next call. An agent this file doesn't name is refused everything.
+#
+# Globs match <namespace>/<key> paths: * and ? stay in one segment, ** crosses segments.
+# transcripts/** (raw sessions, Monty's private conversations) is readable only with transcripts = true.
+
+[agents.jangin]
+read = ["agent/daepyo/**", "agent/jangin/**", "project/**", "shared/**"]
+write = ["agent/jangin/**"]
+transcripts = false
