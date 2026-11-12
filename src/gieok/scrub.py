@@ -18,7 +18,9 @@ REDACTED = "[redacted]"
 Q = r'\\*"'
 
 SECRETS: list[tuple[str, re.Pattern, bool]] = [  # (kind, pattern, live)
-    ("private-key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S), True),
+    # The body never holds "-----", so it stops at the next marker without backtracking (linear on many BEGINs).
+    ("private-key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?:[^-]|-(?!----)){0,16384}+-----END [A-Z ]*PRIVATE KEY-----"),
+     True),
     ("anthropic-key", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}"), True),
     ("openai-key", re.compile(r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}"), True),
     ("stripe-key", re.compile(r"\b(?:sk|rk)_live_[A-Za-z0-9]{16,}"), True),
@@ -37,7 +39,8 @@ SECRETS: list[tuple[str, re.Pattern, bool]] = [  # (kind, pattern, live)
         r"[\"'\\]*\s*[=:]\s*[\"'\\]*)(?![$<{%])([^\s\"'\\,;()\[\]{}<>]{8,})(?=[\s\"'\\,;]|$)"), False),
 ]
 
-EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+# Starts only at the start of a run: with `\b` every position in "1-1-1-..." restarted the scan (quadratic).
+EMAIL = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 PHONE = re.compile(r"(?<![\w.-])(?:\+\d{1,3}[ .-]?)?\(?\d{2,4}\)?[ .-]\d{3,4}[ .-]\d{3,4}(?![\w.-])")
 IPV4 = re.compile(r"\b(?!127\.0\.0\.1\b)(?!0\.0\.0\.0\b)(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b")
 # Card numbers: an issuer prefix (Visa, Mastercard, Amex, Discover), grouped or 15-16 digits, then Luhn.
