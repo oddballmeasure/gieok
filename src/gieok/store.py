@@ -64,6 +64,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(body, content='', c
 """
 
 
+class Forgotten(Exception):
+    """put(revive=False) on a tombstoned memory."""
+
+
 @dataclass
 class Memory:
     id: str
@@ -295,8 +299,10 @@ class Store:
         return data
 
     def put(self, ns: str, key: str, text: str, *, author: str, kind: str = "fact", tier: str = "hot",
-            title: str = "", tags: list[str] = (), reason: str = "", batch: str | None = None) -> str:
-        """Write a memory (new, or a new version of ns/key). Returns the version id. No-op if unchanged."""
+            title: str = "", tags: list[str] = (), reason: str = "", batch: str | None = None,
+            revive: bool = True) -> str:
+        """Write a memory (new, or a new version of ns/key). Returns the version id. No-op if unchanged.
+        With revive=False a forgotten ns/key raises Forgotten instead of coming back."""
         if tier not in ("hot", "warm"):
             raise ValueError("memories live in the hot or warm tier")
         data = text.encode()
@@ -304,6 +310,8 @@ class Store:
         now = int(time.time())
         with self.tx() as db:
             mem = db.execute("SELECT * FROM memory WHERE ns=? AND key=?", (ns, key)).fetchone()
+            if mem is not None and mem["deleted"] and not revive:
+                raise Forgotten(f"{ns}/{key}")
             parent = db.execute("SELECT * FROM version WHERE id=?", (mem["head"],)).fetchone() if mem and mem["head"] else None
             if parent is not None and parent["hash"] == digest and not mem["deleted"] and \
                     (not title or title == mem["title"]):
