@@ -39,7 +39,7 @@ def test_memory_and_notes_land_in_their_namespaces(store, tmp_path):
     assert m.kind == "project" and "design lead" in m.title
     assert ingest_claude_memory(store, ctx).skipped == 2  # unchanged files make no new versions
     ingest_notes(store, ctx)
-    assert "141-146" in store.text(store.get("shared/project/koizler", "notes").id)
+    assert "141-146" in store.text(store.get("project/koizler", "NOTES").id)
 
 
 def _session(n: int) -> str:

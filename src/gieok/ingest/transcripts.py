@@ -13,6 +13,7 @@ from pathlib import Path
 from gieok.chunk import digest
 from gieok.ingest import Context, Report
 from gieok.ingest.memory import agent_for
+from gieok.namespaces import transcript_ns
 from gieok.store import Store
 
 INDEX_LIMIT = 400_000  # characters of message text indexed per transcript
@@ -82,7 +83,7 @@ def _one(store: Store, ctx: Context, path: Path, harness: str, agent: str, proje
     text = (claude_text(lines) if harness == "claude" else codex_text(lines))[:INDEX_LIMIT]
     stamps = [t for t in (_ts(o.get("timestamp")) for o in lines) if t]
     report.new_bytes += store.put_transcript(
-        source=str(path), host=ctx.host, agent=agent, project=project, harness=harness, data=clean.encode(),
+        source=str(path), host=ctx.host, agent=agent, project=project, ns=transcript_ns(project), harness=harness, data=clean.encode(),
         source_hash=digest(raw), source_size=st.st_size, source_mtime=st.st_mtime, redactions=report.redactions - before,
         text=text, started=min(stamps) if stamps else None, ended=max(stamps) if stamps else None)
     report.stored += 1

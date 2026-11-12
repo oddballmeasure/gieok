@@ -25,7 +25,23 @@ def _ratio(raw: int, stored: int) -> str:
     return f"{raw / stored:.1f}x" if stored else "-"
 
 
+def _backfill(store: Store, verbose: bool = False) -> None:
+    from gieok.migrate import backfill
+    r = backfill(store)
+    if r.moved or r.transcripts or r.conflicts or verbose:
+        print(f"namespaces: {len(r.moved)} memories moved, {r.transcripts} transcripts tagged, "
+              f"{len(r.conflicts)} conflicts", flush=True)
+    for line in (r.moved if verbose else []) + r.conflicts:
+        print("  ", line)
+
+
+def cmd_migrate(store: Store, args) -> int:
+    _backfill(store, verbose=True)
+    return 0
+
+
 def cmd_ingest(store: Store, args) -> int:
+    _backfill(store)
     ctx = Context(host=store.node)
     from gieok import scrub
     ctx.known_secrets = scrub.known_values(settings_files(ctx.home))
@@ -171,6 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     w.add_argument("--title")
     w.add_argument("--reason")
     sub.add_parser("verify")
+    sub.add_parser("migrate", help="move Phase 1 rows into the Phase 2 namespaces (idempotent)")
     sub.add_parser("embed", help="embed memories that have no vector yet (loads the model, ~750 MB)")
     sub.add_parser("seal", help="compress the open pack now")
     args = p.parse_args(argv)
@@ -179,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         print(store.seal(force=True) or "nothing to seal")
         return 0
     return {"ingest": cmd_ingest, "stats": cmd_stats, "search": cmd_search, "get": cmd_get, "put": cmd_put,
-            "verify": cmd_verify, "embed": cmd_embed}[args.cmd](store, args)
+            "verify": cmd_verify, "embed": cmd_embed, "migrate": cmd_migrate}[args.cmd](store, args)
 
 
 if __name__ == "__main__":

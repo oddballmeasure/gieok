@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS transcript (
     rid INTEGER PRIMARY KEY, source TEXT NOT NULL UNIQUE, host TEXT NOT NULL, agent TEXT NOT NULL,
     project TEXT NOT NULL, harness TEXT NOT NULL, blob BLOB NOT NULL, source_hash BLOB NOT NULL,
     source_size INTEGER NOT NULL, source_mtime REAL NOT NULL, redactions INTEGER NOT NULL,
-    started INTEGER, ended INTEGER, ingested INTEGER NOT NULL) STRICT;
+    started INTEGER, ended INTEGER, ingested INTEGER NOT NULL, ns TEXT NOT NULL DEFAULT '') STRICT;
 CREATE TABLE IF NOT EXISTS op (
     seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, hlc INTEGER NOT NULL, origin TEXT NOT NULL,
     type TEXT NOT NULL, body TEXT NOT NULL) STRICT;
@@ -103,6 +103,7 @@ class Store:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=NORMAL")
         self.db.executescript(SCHEMA)
+        self._upgrade()
         self.clock = Clock(int(self._meta("hlc") or 0))
         self._lock = threading.RLock()
         self._pack_cache: OrderedDict[str, bytes] = OrderedDict()
@@ -110,6 +111,12 @@ class Store:
         self._recover_staging()
 
     # Plumbing
+
+    def _upgrade(self) -> None:
+        """Additive schema changes for stores made by older versions. Backfills live in migrate.py."""
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(transcript)")}
+        if "ns" not in cols:  # Phase 2: transcripts get a namespace so grants can match them
+            self.db.execute("ALTER TABLE transcript ADD COLUMN ns TEXT NOT NULL DEFAULT ''")
 
     def _meta(self, key: str) -> str | None:
         row = self.db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
@@ -329,6 +336,18 @@ class Store:
             self._op(db, "memory.forget", {"memory": mem["id"], "author": author, "reason": reason, "batch": batch})
         return True
 
+    def move(self, memory_id: str, ns: str, key: str, *, author: str, reason: str = "") -> None:
+        """Give a memory a new namespace and key. History, search index and vector stay with it."""
+        with self.tx() as db:
+            mem = db.execute("SELECT ns, key FROM memory WHERE id=?", (memory_id,)).fetchone()
+            db.execute("UPDATE memory SET ns=?, key=? WHERE id=?", (ns, key, memory_id))
+            self._op(db, "memory.move", {"memory": memory_id, "from": f"{mem['ns']}/{mem['key']}", "ns": ns,
+                                         "key": key, "author": author, "reason": reason})
+
+    def by_id(self, memory_id: str) -> Memory | None:
+        row = self.db.execute("SELECT * FROM memory WHERE id=?", (memory_id,)).fetchone()
+        return self._memory(row) if row else None
+
     def _memory(self, row: sqlite3.Row) -> Memory:
         return Memory(id=row["id"], ns=row["ns"], key=row["key"], kind=row["kind"], tier=row["tier"],
                       title=row["title"], tags=json.loads(row["tags"]), head=row["head"], deleted=bool(row["deleted"]),
@@ -384,6 +403,7 @@ class Store:
         return bool(row) and row["source_size"] == size and row["source_mtime"] == mtime
 
     def put_transcript(self, *, source: str, host: str, agent: str, project: str, harness: str, data: bytes,
+                       ns: str = "",
                        source_hash: bytes, source_size: int, source_mtime: float, redactions: int, text: str,
                        started: int | None, ended: int | None) -> int:
         """Store a (scrubbed) transcript. Re-ingesting a grown file reuses every unchanged chunk."""
@@ -392,17 +412,17 @@ class Store:
             row = db.execute("SELECT rid FROM transcript WHERE source=?", (source,)).fetchone()
             if row:
                 db.execute("UPDATE transcript SET blob=?, source_hash=?, source_size=?, source_mtime=?, redactions=?, "
-                           "started=?, ended=?, ingested=? WHERE rid=?",
+                           "started=?, ended=?, ingested=?, ns=COALESCE(NULLIF(?, ''), ns) WHERE rid=?",
                            (digest, source_hash, source_size, source_mtime, redactions, started, ended, int(time.time()),
-                            row["rid"]))
+                            ns, row["rid"]))
                 rid = row["rid"]
                 db.execute("DELETE FROM transcript_fts WHERE rowid=?", (rid,))
             else:
                 cur = db.execute("INSERT INTO transcript (source, host, agent, project, harness, blob, source_hash, "
-                                 "source_size, source_mtime, redactions, started, ended, ingested) "
-                                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                 "source_size, source_mtime, redactions, started, ended, ingested, ns) "
+                                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                  (source, host, agent, project, harness, digest, source_hash, source_size, source_mtime,
-                                  redactions, started, ended, int(time.time())))
+                                  redactions, started, ended, int(time.time()), ns))
                 rid = cur.lastrowid
             db.execute("INSERT INTO transcript_fts (rowid, body) VALUES (?, ?)", (rid, text))
             self._op(db, "transcript.put", {"source": source, "blob": digest.hex(), "host": host, "agent": agent})
