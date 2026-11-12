@@ -11,6 +11,10 @@ Not pushed, no PR (Daepyo/Monty decide). Plan: ~/.claude/plans/great-let-s-work-
   500-char clipping, NFKC + Cf strip + split-key check before scrub, rank-after-filter search with no score,
   forgotten keys never revived (checked in the store tx), ASCII-digit transcript ids. 70 tests green.
   Reviewer probes: /tmp/probe/{p,c,s}.py (c.py: 6 procs x 60 puts -> 720 audit lines, 0 bad).
+  Review round 2 (CHANGES) fixed: split-key scan is a bounded linear pass (was a quadratic regex, 12.7 s on
+  "sk-"*10000; now ~0.01 s), any whitespace separates pieces; put stores the ORIGINAL text (normalized text is
+  scanned only; PII visible only after normalizing refuses the put); SDK rejection errors are a fixed string with
+  type + field names; audit strings are scrubbed. Probes /tmp/probe/p2.py, p3.py. 88 tests green.
   Next action: wait for the re-review of the fix commits; no push/PR until told.
 - DONE on the real store (~/.local/share/gieok), 2026-11-12: backup at ~/.local/share/gieok.bak-2026-11-12;
   `gieok migrate` moved 7 NOTES rows (shared/project/<r>/notes -> project/<r>/NOTES), tagged 2192 transcripts,

@@ -45,19 +45,25 @@ namespace)`, `get(id)`, `list(namespace_prefix, limit)` and `put(key, content)`.
 - **Reads:** every result passes the read grant. Search restricts its candidates to readable memories before it
   ranks them, so denied memories never move a rank or take a pool slot. Hits carry no score. `transcripts/**` needs
   `transcripts = true`.
-- **Writes:** `put` writes `agent/<agent>/<key>` as a new version, only inside the write grant, at most 32 KB. The
-  content is NFKC-normalized and stripped of format characters (zero-width and the like) first. Then the scrubber
-  runs, and also checks known token prefixes whose pieces are split by whitespace. Credentials refuse the whole put:
-  the reply names the kinds, never the value. Customer PII is stored as `[redacted]`. The version records the agent,
-  the node and the time. A key Monty forgot stays forgotten: a put on it is refused ("this key was forgotten; use a
-  new key").
+- **Writes:** `put` writes `agent/<agent>/<key>` as a new version, only inside the write grant, at most 32 KB.
+  - The scrubber scans the content twice: as written, and NFKC-normalized with format characters (zero-width and the
+    like) removed. It also checks known token prefixes whose pieces are split by any whitespace, newlines included.
+    The scan is linear: 32 KB of adversarial input takes well under 0.2 s.
+  - Credentials refuse the whole put. The reply names the kinds, never the value.
+  - What is stored is the original text, with only customer PII replaced by `[redacted]`. Normalizing is for
+    scanning only, because it would corrupt Korean jamo (`ㅋㅋ`), `①`, ligatures and ZWJ sequences. PII that only
+    shows up after normalizing (look-alike or invisible characters) refuses the put, so it is never stored in clear.
+  - The version records the agent, the node and the time.
+  - A key Monty forgot stays forgotten: a put on it is refused ("this key was forgotten; use a new key").
 - **Audit:** one JSON line per call, allowed or refused, written in a `finally` whatever the grant check says, in
   `~/.local/share/gieok/audit/<agent>.jsonl`. Each line has the time, agent, node, tool, args (for `put` only the key
-  and the length, never the content) and the result count or the error. Strings are cut at 500 characters. A `put`
-  logs an `"phase":"intent"` line before the store write and the result line after it. Calls from an agent
-  `grants.toml` doesn't name (or while the file is unusable) go to `audit/_refused.jsonl`, so they can't create new
-  files. Calls the SDK rejects before a tool runs (bad argument types, unknown tool names) are audited too, with the
-  rejected values hidden.
+  and the length, never the content) and the result count or the error. Logged strings are cut at 500 characters and
+  scrubbed, so a credential in a query or an id shows as `[secret:<kind>]`. A `put` logs an `"phase":"intent"` line
+  before the store write and the result line after it. Calls from an agent `grants.toml` doesn't name (or while the
+  file is unusable) go to `audit/_refused.jsonl`, so they can't create new files. Calls the SDK rejects before a tool
+  runs (bad argument types, unknown tool names) are audited too. Their error is a fixed string with the error type and
+  the field names only (`ValidationError: invalid arguments (content)`). Their args keep known argument names with
+  simple values only, plus a count of unknown arguments.
 - **Search:** `--search fts` (the default) never loads the embedding model; use it for remote agents and small hosts.
   `--search hybrid` loads it once per process, on the first search, if vectors exist.
 - **Node:** in `mcp` mode the node recorded in versions and audit lines is always the real hostname; `--node` and
