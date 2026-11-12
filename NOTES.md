@@ -15,7 +15,13 @@ Not pushed, no PR (Daepyo/Monty decide). Plan: ~/.claude/plans/great-let-s-work-
   "sk-"*10000; now ~0.01 s), any whitespace separates pieces; put stores the ORIGINAL text (normalized text is
   scanned only; PII visible only after normalizing refuses the put); SDK rejection errors are a fixed string with
   type + field names; audit strings are scrubbed. Probes /tmp/probe/p2.py, p3.py. 88 tests green.
-  Next action: wait for the re-review of the fix commits; no push/PR until told.
+  Review round 3 (last, 3 LOW) fixed: put key scanned for credentials; scrub.py EMAIL anchored to the start of a
+  run (the quadratic one was EMAIL, not PHONE/IPV4: `\b...+@` restarted at every position) and the private-key
+  body stops at the next "-----" (possessive, <= 16 KB); PII check compares spans via a per-char NFKC origin map
+  (zero-width inside an email refuses). 122 tests green. Probe /tmp/probe/p4.py.
+  MERGE NOTE: the other person's uncommitted scrub.py in ~/gieok edits the same EMAIL line (adds `\\` to the
+  same lookbehind). It conflicts textually; resolve by taking their line (a superset of this fix).
+  Next action: review done; push/PR only when told.
 - DONE on the real store (~/.local/share/gieok), 2026-11-12: backup at ~/.local/share/gieok.bak-2026-11-12;
   `gieok migrate` moved 7 NOTES rows (shared/project/<r>/notes -> project/<r>/NOTES), tagged 2192 transcripts,
   0 conflicts; `gieok refresh` once; `deploy/grants.toml` installed to grants.toml (0644); jangin searches over real

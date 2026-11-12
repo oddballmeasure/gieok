@@ -48,11 +48,15 @@ namespace)`, `get(id)`, `list(namespace_prefix, limit)` and `put(key, content)`.
 - **Writes:** `put` writes `agent/<agent>/<key>` as a new version, only inside the write grant, at most 32 KB.
   - The scrubber scans the content twice: as written, and NFKC-normalized with format characters (zero-width and the
     like) removed. It also checks known token prefixes whose pieces are split by any whitespace, newlines included.
-    The scan is linear: 32 KB of adversarial input takes well under 0.2 s.
-  - Credentials refuse the whole put. The reply names the kinds, never the value.
+    The scan, the scrubber included, is linear: 32 KB of adversarial input takes well under 0.2 s (timing tests in
+    `tests/test_scrub_speed.py` and `tests/test_mcp.py`). The private-key pattern only spans PEM blocks up to 16 KB.
+  - Credentials refuse the whole put. The reply names the kinds, never the value. The key is scanned too: a key that
+    holds a credential (also with `/` or `.` between its pieces) refuses the put.
   - What is stored is the original text, with only customer PII replaced by `[redacted]`. Normalizing is for
-    scanning only, because it would corrupt Korean jamo (`ㅋㅋ`), `①`, ligatures and ZWJ sequences. PII that only
-    shows up after normalizing (look-alike or invisible characters) refuses the put, so it is never stored in clear.
+    scanning only, because it would corrupt Korean jamo (`ㅋㅋ`), `①`, ligatures and ZWJ sequences. Every PII span the
+    normalized scan finds must lie wholly inside what the original's redaction removes. If it doesn't (for example
+    `jo<zero-width space>hn.smith@example.com`, where only `hn.smith@…` would be redacted), the put is refused, so no
+    PII fragment is stored in clear.
   - The version records the agent, the node and the time.
   - A key Monty forgot stays forgotten: a put on it is refused ("this key was forgotten; use a new key").
 - **Audit:** one JSON line per call, allowed or refused, written in a `finally` whatever the grant check says, in
