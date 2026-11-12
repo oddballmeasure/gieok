@@ -1,17 +1,25 @@
 # NOTES: Gieok (기억)
 
-## CURRENT POSITION (2026-11-08)
-Phase 1 (single-node core) IN PROGRESS. Plan: ~/.claude/plans/great-let-s-work-out-temporal-rossum.md (Phase 0
-results, access model and all guardrail decisions are there).
-- DONE: store (schema, packs, versions with dict/delta codecs, blobs, ops/HLC, forget, batch undo), FastCDC chunking,
-  scrub (secrets + PII), ingesters (Claude memory, NOTES.md, Claude + Codex transcripts), FTS5 contentless search,
-  embeddings (fastembed MiniLM-L12 multilingual, 1-bit + int8), hybrid RRF search, CLI, 19 tests green. Repo PUBLIC (Monty 11-08), MIT.
-- RUNNING: first full real ingest on oscar into ~/.local/share/gieok (log /tmp/gieok-bench-out/ingest.log).
-- NEXT: check stats vs Phase 0 (expect ~51 MB packs for 700 MB), verify, `gieok embed`, search demo, then the
-  columnar uuid/timestamp experiment (keep only if >=10% gain), push repo oddballmeasure/gieok (private), report the
-  Phase 1 gate.
-- Phase 2 after the gate: MCP server, access model (tokens, grants, audit, signed grant changes), write-through export
-  of Claude auto-memory.
+## CURRENT POSITION (2026-11-12)
+Phase 2 minimal (MCP + grants + audit, for jangin) BUILT on branch `phase2-mcp` in worktree ~/gieok-wt/mcp.
+Not pushed, no PR (Daepyo/Monty decide). Plan: ~/.claude/plans/great-let-s-work-out-temporal-rossum.md.
+- DONE (committed): namespaces + `gieok migrate` backfill; `grants.py` (grants.toml, fail closed); `mcpserver.py`
+  (`gieok mcp --agent <name> [--search fts|hybrid]`, tools search/get/list/put, audit JSONL); `gieok refresh` +
+  `deploy/gieok-refresh.{service,timer}` (written, NOT installed); staging recovery under the write lock; README.
+  57 tests green (`uv run --with pytest pytest`).
+- DONE on the real store (~/.local/share/gieok), 2026-11-12: backup at ~/.local/share/gieok.bak-2026-11-12;
+  `gieok migrate` moved 7 NOTES rows (shared/project/<r>/notes -> project/<r>/NOTES), tagged 2192 transcripts,
+  0 conflicts; `gieok refresh` once; `deploy/grants.toml` installed to grants.toml (0644); jangin searches over real
+  stdio MCP returned only agent/daepyo + project/ hits, no transcripts; `gieok verify` 0 problems.
+- NOT DONE / NEXT:
+  1. Review, push, PR, merge (until merged, do NOT run `gieok ingest` from ~/gieok main: the old code writes
+     `shared/project/...` again; `migrate` would then report conflicts for those rows).
+  2. Monty installs the timer: `cp deploy/gieok-refresh.* ~/.config/systemd/user/ && systemctl --user daemon-reload
+     && systemctl --user enable --now gieok-refresh.timer`.
+  3. Register jangin's MCP entry on his host: `ssh oscar uv run --project /home/monty/gieok gieok mcp --agent jangin
+     --search fts` (stdio over ssh), or the same command locally on oscar.
+  4. Rest of Phase 2 per plan: per-principal tokens, signed grant changes, forget/audit/curate permissions, overseer
+     and dreamer grants, `system/audit` in the store, write-through export of Claude auto-memory.
 
 ## Decisions
 - Codec choice per version: smallest of dict/zstd vs delta (delta chains capped at 8).
@@ -21,8 +29,21 @@ results, access model and all guardrail decisions are there).
 - Scrub false positives fixed after a masked survey of real hits (/tmp/gieok-bench-scripts/hits.py):
   assigned-secret skips `$VAR`, `<placeholder>`, calls; card pattern anchored (decimals and UUID pieces broke JSON).
   Monty's own email in every system prompt is redacted (redact-everything rule).
-- Embedding model peaks ~750 MB RSS: only short-lived processes load it.
+- Embedding model peaks ~750 MB RSS: only short-lived processes load it. MCP defaults to `--search fts`.
+- Phase 2 (11-12): grants match `<ns>/<key>` paths. Memory ns = `agent/<slug>` from the Claude project dir
+  (namespaces.AGENT_FOR_SLUG maps oscar -> daepyo); transcripts get a `ns` column (`transcripts/<slug>`), backfilled
+  from `project`. The backfill moves memories by the `imported from <path>` reason of their head version.
+- Grants are a plain TOML file Monty owns (not signed yet): wrong owner or group/world-writable -> refuse all.
+  Re-read on change. `transcripts/**` needs `transcripts = true` regardless of read globs. Writes to `transcripts/`
+  and `system/` are never allowed.
+- put: scrub first; any credential refuses the put (kinds named, value never echoed, not in audit); PII is stored
+  redacted. Provenance: author `agent:<name>`, version origin = node, reason `mcp put by <agent> on <node> at <iso>`.
+- get of a missing id and of a denied id give the same answer (no existence oracle). No delete tool.
 
 ## Gotchas
 - Daepyo's Bash guard blocks command text containing the dotenv name; write such files with the Write tool.
 - cstack hooks block `git ls-files` at a repo root and sleep loops.
+- FastMCP needs `structured_output=True` and `dict[str, Any]` return types for structured results.
+- A Claude project dir that slugs to an agent name (say a future `~/jangin` checkout) lands its auto-memory in that
+  agent's namespace, where that agent can read and write it.
+- Many processes open the store (web, MCP sessions, timer, ingest). Each has its own HLC clock from `meta`.
