@@ -1,0 +1,11 @@
+# Hourly `gieok refresh`. See gieok-refresh.service for how to install.
+[Unit]
+Description=Gieok: refresh memories and NOTES.md hourly
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

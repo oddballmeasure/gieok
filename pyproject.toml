@@ -9,6 +9,7 @@ dependencies = [
     "blake3>=1.0",
     "fastcdc>=1.5",
     "jinja2>=3.1",
+    "mcp==1.30.0",
     "numpy>=2.0",
     "python-dotenv>=1.2",
     "zstandard>=0.23",

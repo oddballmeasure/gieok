@@ -1,0 +1,13 @@
+# systemd user unit: re-ingest Claude auto-memory and NOTES.md files into Gieok (not transcripts).
+# Started hourly by gieok-refresh.timer. To install (by hand, Monty):
+#   cp deploy/gieok-refresh.service deploy/gieok-refresh.timer ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now gieok-refresh.timer
+[Unit]
+Description=Gieok: refresh memories and NOTES.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/gieok
+ExecStart=%h/.local/bin/uv run gieok refresh
+Nice=10
+IOSchedulingClass=idle

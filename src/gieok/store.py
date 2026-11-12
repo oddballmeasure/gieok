@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS transcript (
     rid INTEGER PRIMARY KEY, source TEXT NOT NULL UNIQUE, host TEXT NOT NULL, agent TEXT NOT NULL,
     project TEXT NOT NULL, harness TEXT NOT NULL, blob BLOB NOT NULL, source_hash BLOB NOT NULL,
     source_size INTEGER NOT NULL, source_mtime REAL NOT NULL, redactions INTEGER NOT NULL,
-    started INTEGER, ended INTEGER, ingested INTEGER NOT NULL) STRICT;
+    started INTEGER, ended INTEGER, ingested INTEGER NOT NULL, ns TEXT NOT NULL DEFAULT '') STRICT;
 CREATE TABLE IF NOT EXISTS op (
     seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, hlc INTEGER NOT NULL, origin TEXT NOT NULL,
     type TEXT NOT NULL, body TEXT NOT NULL) STRICT;
@@ -62,6 +62,10 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(title, body, content=''
 CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(body, content='', contentless_delete=1,
     tokenize='unicode61 remove_diacritics 2');
 """
+
+
+class Forgotten(Exception):
+    """put(revive=False) on a tombstoned memory."""
 
 
 @dataclass
@@ -103,6 +107,7 @@ class Store:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=NORMAL")
         self.db.executescript(SCHEMA)
+        self._upgrade()
         self.clock = Clock(int(self._meta("hlc") or 0))
         self._lock = threading.RLock()
         self._pack_cache: OrderedDict[str, bytes] = OrderedDict()
@@ -110,6 +115,12 @@ class Store:
         self._recover_staging()
 
     # Plumbing
+
+    def _upgrade(self) -> None:
+        """Additive schema changes for stores made by older versions. Backfills live in migrate.py."""
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(transcript)")}
+        if "ns" not in cols:  # Phase 2: transcripts get a namespace so grants can match them
+            self.db.execute("ALTER TABLE transcript ADD COLUMN ns TEXT NOT NULL DEFAULT ''")
 
     def _meta(self, key: str) -> str | None:
         row = self.db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
@@ -147,13 +158,22 @@ class Store:
         return self.root / "packs" / f"{pack}.staging"
 
     def _recover_staging(self) -> None:
-        """After a crash, cut the staging file back to what the database knows about."""
-        path = self._staging(self._open_pack)
-        known = self.db.execute("SELECT COALESCE(MAX(off + len), 0) FROM chunk WHERE pack=?",
-                                (self._open_pack,)).fetchone()[0]
-        if path.exists() and path.stat().st_size > known:
-            with path.open("r+b") as f:
-                f.truncate(known)
+        """After a crash, cut the staging file back to what the database knows about.
+
+        Under the write lock: another process (an ingest) appends to staging only inside its own write
+        transaction, so once we hold the lock, bytes past the known end really are crash leftovers."""
+        with self._lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                self._open_pack = self._meta("open_pack") or self._open_pack
+                path = self._staging(self._open_pack)
+                known = self.db.execute("SELECT COALESCE(MAX(off + len), 0) FROM chunk WHERE pack=?",
+                                        (self._open_pack,)).fetchone()[0]
+                if path.exists() and path.stat().st_size > known:
+                    with path.open("r+b") as f:
+                        f.truncate(known)
+            finally:
+                self.db.execute("COMMIT")
 
     def _put_chunk(self, db, f, digest: bytes, data: bytes) -> int:
         """Store a chunk once, appending to the open staging file `f`. Returns the bytes newly written."""
@@ -279,8 +299,10 @@ class Store:
         return data
 
     def put(self, ns: str, key: str, text: str, *, author: str, kind: str = "fact", tier: str = "hot",
-            title: str = "", tags: list[str] = (), reason: str = "", batch: str | None = None) -> str:
-        """Write a memory (new, or a new version of ns/key). Returns the version id. No-op if unchanged."""
+            title: str = "", tags: list[str] = (), reason: str = "", batch: str | None = None,
+            revive: bool = True) -> str:
+        """Write a memory (new, or a new version of ns/key). Returns the version id. No-op if unchanged.
+        With revive=False a forgotten ns/key raises Forgotten instead of coming back."""
         if tier not in ("hot", "warm"):
             raise ValueError("memories live in the hot or warm tier")
         data = text.encode()
@@ -288,6 +310,8 @@ class Store:
         now = int(time.time())
         with self.tx() as db:
             mem = db.execute("SELECT * FROM memory WHERE ns=? AND key=?", (ns, key)).fetchone()
+            if mem is not None and mem["deleted"] and not revive:
+                raise Forgotten(f"{ns}/{key}")
             parent = db.execute("SELECT * FROM version WHERE id=?", (mem["head"],)).fetchone() if mem and mem["head"] else None
             if parent is not None and parent["hash"] == digest and not mem["deleted"] and \
                     (not title or title == mem["title"]):
@@ -328,6 +352,18 @@ class Store:
             db.execute("DELETE FROM vec WHERE rid=?", (mem["rid"],))
             self._op(db, "memory.forget", {"memory": mem["id"], "author": author, "reason": reason, "batch": batch})
         return True
+
+    def move(self, memory_id: str, ns: str, key: str, *, author: str, reason: str = "") -> None:
+        """Give a memory a new namespace and key. History, search index and vector stay with it."""
+        with self.tx() as db:
+            mem = db.execute("SELECT ns, key FROM memory WHERE id=?", (memory_id,)).fetchone()
+            db.execute("UPDATE memory SET ns=?, key=? WHERE id=?", (ns, key, memory_id))
+            self._op(db, "memory.move", {"memory": memory_id, "from": f"{mem['ns']}/{mem['key']}", "ns": ns,
+                                         "key": key, "author": author, "reason": reason})
+
+    def by_id(self, memory_id: str) -> Memory | None:
+        row = self.db.execute("SELECT * FROM memory WHERE id=?", (memory_id,)).fetchone()
+        return self._memory(row) if row else None
 
     def _memory(self, row: sqlite3.Row) -> Memory:
         return Memory(id=row["id"], ns=row["ns"], key=row["key"], kind=row["kind"], tier=row["tier"],
@@ -384,6 +420,7 @@ class Store:
         return bool(row) and row["source_size"] == size and row["source_mtime"] == mtime
 
     def put_transcript(self, *, source: str, host: str, agent: str, project: str, harness: str, data: bytes,
+                       ns: str = "",
                        source_hash: bytes, source_size: int, source_mtime: float, redactions: int, text: str,
                        started: int | None, ended: int | None) -> int:
         """Store a (scrubbed) transcript. Re-ingesting a grown file reuses every unchanged chunk."""
@@ -392,17 +429,17 @@ class Store:
             row = db.execute("SELECT rid FROM transcript WHERE source=?", (source,)).fetchone()
             if row:
                 db.execute("UPDATE transcript SET blob=?, source_hash=?, source_size=?, source_mtime=?, redactions=?, "
-                           "started=?, ended=?, ingested=? WHERE rid=?",
+                           "started=?, ended=?, ingested=?, ns=COALESCE(NULLIF(?, ''), ns) WHERE rid=?",
                            (digest, source_hash, source_size, source_mtime, redactions, started, ended, int(time.time()),
-                            row["rid"]))
+                            ns, row["rid"]))
                 rid = row["rid"]
                 db.execute("DELETE FROM transcript_fts WHERE rowid=?", (rid,))
             else:
                 cur = db.execute("INSERT INTO transcript (source, host, agent, project, harness, blob, source_hash, "
-                                 "source_size, source_mtime, redactions, started, ended, ingested) "
-                                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                 "source_size, source_mtime, redactions, started, ended, ingested, ns) "
+                                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                  (source, host, agent, project, harness, digest, source_hash, source_size, source_mtime,
-                                  redactions, started, ended, int(time.time())))
+                                  redactions, started, ended, int(time.time()), ns))
                 rid = cur.lastrowid
             db.execute("INSERT INTO transcript_fts (rowid, body) VALUES (?, ?)", (rid, text))
             self._op(db, "transcript.put", {"source": source, "blob": digest.hex(), "host": host, "agent": agent})

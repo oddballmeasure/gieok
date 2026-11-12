@@ -25,7 +25,23 @@ def _ratio(raw: int, stored: int) -> str:
     return f"{raw / stored:.1f}x" if stored else "-"
 
 
+def _backfill(store: Store, verbose: bool = False) -> None:
+    from gieok.migrate import backfill
+    r = backfill(store)
+    if r.moved or r.transcripts or r.conflicts or verbose:
+        print(f"namespaces: {len(r.moved)} memories moved, {r.transcripts} transcripts tagged, "
+              f"{len(r.conflicts)} conflicts", flush=True)
+    for line in (r.moved if verbose else []) + r.conflicts:
+        print("  ", line)
+
+
+def cmd_migrate(store: Store, args) -> int:
+    _backfill(store, verbose=True)
+    return 0
+
+
 def cmd_ingest(store: Store, args) -> int:
+    _backfill(store)
     ctx = Context(host=store.node)
     from gieok import scrub
     ctx.known_secrets = scrub.known_values(settings_files(ctx.home))
@@ -53,6 +69,28 @@ def cmd_ingest(store: Store, args) -> int:
         print(f"LIVE-LOOKING SECRETS redacted in {len(total.live_secrets)} places:", file=sys.stderr)
         for line in sorted(set(total.live_secrets))[:50]:
             print("  ", line, file=sys.stderr)
+    return 0
+
+
+def cmd_refresh(store: Store, args) -> int:
+    """Re-ingest memories and NOTES.md (not transcripts). The hourly timer runs this."""
+    args.memory, args.notes, args.claude, args.codex, args.limit, args.seal = True, True, False, False, None, False
+    return cmd_ingest(store, args)
+
+
+def cmd_mcp(store: Store, args) -> int:
+    from gieok.grants import Refused
+    from gieok.mcpserver import Gate, build_server
+    from gieok import scrub
+    gate = Gate(store, args.agent, args.home, search=args.search,
+                known_secrets=scrub.known_values(settings_files(Path.home())))
+    try:
+        gate.access.grant()
+    except Refused as exc:
+        gate.audit("start", {"search": args.search}, error=str(exc))
+        print(f"gieok mcp: refused: {exc}", file=sys.stderr)
+        return 2
+    build_server(gate).run("stdio")
     return 0
 
 
@@ -171,15 +209,23 @@ def main(argv: list[str] | None = None) -> int:
     w.add_argument("--title")
     w.add_argument("--reason")
     sub.add_parser("verify")
+    sub.add_parser("refresh", help="re-ingest memories and NOTES.md, not transcripts (hourly timer)")
+    m = sub.add_parser("mcp", help="stdio MCP server for one agent, limited by grants.toml")
+    m.add_argument("--agent", required=True)
+    m.add_argument("--search", choices=("fts", "hybrid"), default="fts",
+                   help="hybrid loads the ~750 MB embedding model once per process; fts (default) never does")
+    sub.add_parser("migrate", help="move Phase 1 rows into the Phase 2 namespaces (idempotent)")
     sub.add_parser("embed", help="embed memories that have no vector yet (loads the model, ~750 MB)")
     sub.add_parser("seal", help="compress the open pack now")
     args = p.parse_args(argv)
+    if args.cmd == "mcp":  # an agent's provenance records the real host, never a node name it was handed
+        args.node = socket.gethostname()
     store = Store(args.home, args.node)
     if args.cmd == "seal":
         print(store.seal(force=True) or "nothing to seal")
         return 0
     return {"ingest": cmd_ingest, "stats": cmd_stats, "search": cmd_search, "get": cmd_get, "put": cmd_put,
-            "verify": cmd_verify, "embed": cmd_embed}[args.cmd](store, args)
+            "verify": cmd_verify, "embed": cmd_embed, "migrate": cmd_migrate, "refresh": cmd_refresh, "mcp": cmd_mcp}[args.cmd](store, args)
 
 
 if __name__ == "__main__":
