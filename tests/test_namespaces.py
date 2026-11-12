@@ -74,3 +74,22 @@ def test_old_store_gets_the_column(tmp_path):
     s = Store(root, "test")
     assert "ns" in {r[1] for r in s.db.execute("PRAGMA table_info(transcript)")}
     s.db.close()
+
+
+def test_refresh_skips_transcripts(tmp_path, monkeypatch, capsys):
+    from gieok import cli
+    home = tmp_path / "h"
+    mem = home / ".claude" / "projects" / "-home-monty-oscar" / "memory"
+    mem.mkdir(parents=True)
+    (mem / "green.md").write_text("merge only when green\n")
+    (mem.parent / "s.jsonl").write_text(json.dumps({"type": "user", "message": {"content": "private"}}) + "\n")
+    (home / "oscar").mkdir()
+    (home / "oscar" / "NOTES.md").write_text("notes\n")
+    monkeypatch.setenv("HOME", str(home))
+    assert cli.main(["--home", str(tmp_path / "node"), "--node", "t", "refresh"]) == 0
+    out = capsys.readouterr().out
+    assert "memory: 1 seen" in out and "notes: 1 seen" in out and "claude" not in out
+    s = Store(tmp_path / "node", "t")
+    assert sorted(f"{m.ns}/{m.key}" for m in s.memories()) == ["agent/daepyo/green", "project/oscar/NOTES"]
+    assert s.db.execute("SELECT COUNT(*) FROM transcript").fetchone()[0] == 0
+    s.db.close()
